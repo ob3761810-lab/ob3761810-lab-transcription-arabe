@@ -2,9 +2,11 @@
 
 // Formulaire de dépôt : envoie le fichier vers le stockage privé,
 // demande la transcription au serveur, puis affiche le texte brut.
+// En mode démonstration, rien n'est envoyé : un texte d'exemple est affiché.
 
 import { upload } from "@vercel/blob/client";
 import { useState } from "react";
+import { DEMO_TRANSCRIPTION } from "@/lib/demo";
 import type { Transcription } from "@/lib/transcription";
 
 type Status =
@@ -38,24 +40,23 @@ function safeFileName(name: string): string {
   return name.normalize("NFKD").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-// `enabled` vaut false tant que le stockage et la transcription ne sont pas configurés.
-export default function UploadForm({ enabled }: { enabled: boolean }) {
+// `demo` vaut true tant que le stockage et la transcription ne sont pas configurés.
+export default function UploadForm({ demo }: { demo: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>({ step: "idle" });
 
   const busy = status.step === "uploading" || status.step === "transcribing";
 
-  if (!enabled) {
-    return (
-      <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
-        Le dépôt de fichiers n&apos;est pas encore activé sur ce site.
-      </p>
-    );
-  }
-
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!file) return;
+
+    if (demo) {
+      setStatus({ step: "transcribing" });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      setStatus({ step: "done", transcription: DEMO_TRANSCRIPTION, fileName: file.name });
+      return;
+    }
 
     try {
       setStatus({ step: "uploading", percent: 0 });
@@ -96,6 +97,14 @@ export default function UploadForm({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="mt-8">
+      {demo && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong>Mode démonstration</strong> : votre fichier reste sur votre ordinateur, rien
+          n&apos;est envoyé. Un texte d&apos;exemple s&apos;affiche à la place de la vraie
+          transcription.
+        </p>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <label className="block rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-6 py-8 text-center hover:border-emerald-400">
           <span dir="auto" className="block font-medium text-zinc-800">
@@ -150,9 +159,15 @@ export default function UploadForm({ enabled }: { enabled: boolean }) {
             {status.transcription.durationSeconds !== null &&
               ` · Durée : ${formatDuration(status.transcription.durationSeconds)}`}
           </p>
-          <p className="mt-2 text-sm text-amber-700">
-            Texte non relu : il peut contenir des erreurs.
-          </p>
+          {demo ? (
+            <p className="mt-2 text-sm font-medium text-amber-700">
+              Exemple de démonstration : ce n&apos;est pas la transcription de votre fichier.
+            </p>
+          ) : (
+            <p className="mt-2 text-sm text-amber-700">
+              Texte non relu : il peut contenir des erreurs.
+            </p>
+          )}
           {/* Chaque ligne prend le sens de sa propre langue :
               arabe de droite à gauche, français/anglais de gauche à droite. */}
           <div className="transcript mt-4 space-y-2 rounded-xl border border-zinc-200 bg-white p-6 text-lg leading-loose text-zinc-900">

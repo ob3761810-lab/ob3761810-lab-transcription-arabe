@@ -8,10 +8,9 @@ const etapes = [
   "Vous relisez et corrigez, puis exportez en Word ou PDF.",
 ];
 
-// Le dépôt n'est proposé que si les clés du stockage et de la transcription sont réglées.
-const transcriptionConfigured = Boolean(
-  process.env.BLOB_READ_WRITE_TOKEN && process.env.ELEVENLABS_API_KEY,
-);
+// Tant que les clés du stockage et de la transcription ne sont pas réglées,
+// le site fonctionne en mode démonstration.
+const demoMode = !(process.env.BLOB_READ_WRITE_TOKEN && process.env.ELEVENLABS_API_KEY);
 
 export default function Home() {
   return (
@@ -34,7 +33,7 @@ export default function Home() {
           بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
         </p>
 
-        <UploadForm enabled={transcriptionConfigured} />
+        <UploadForm demo={demoMode} />
 
         <h2 className="mt-12 text-xl font-semibold text-zinc-900">
           Comment ça marche
