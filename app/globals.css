@@ -16,3 +16,8 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Texte transcrit : police latine, avec la police arabe pour les mots arabes. */
+.transcript {
+  font-family: var(--font-geist-sans), var(--font-arabic), sans-serif;
+}

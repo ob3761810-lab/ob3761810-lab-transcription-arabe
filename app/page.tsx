@@ -1,3 +1,5 @@
+import UploadForm from "@/app/components/UploadForm";
+
 const etapes = [
   "Déposez un fichier audio ou vidéo depuis votre ordinateur.",
   "Le texte est transcrit (arabe, français, anglais).",
@@ -27,7 +29,9 @@ export default function Home() {
           بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
         </p>
 
-        <h2 className="mt-10 text-xl font-semibold text-zinc-900">
+        <UploadForm />
+
+        <h2 className="mt-12 text-xl font-semibold text-zinc-900">
           Comment ça marche
         </h2>
         <ol className="mt-4 list-decimal space-y-2 pl-6 text-zinc-700">
@@ -35,11 +39,6 @@ export default function Home() {
             <li key={etape}>{etape}</li>
           ))}
         </ol>
-
-        <p className="mt-10 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Application en préparation : le dépôt de fichiers arrive à la
-          prochaine étape.
-        </p>
       </div>
     </main>
   );

@@ -62,4 +62,4 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
 9. Mise en ligne.
 
 ## Étape en cours
-Étape 0.
+Étape 1.
