@@ -8,6 +8,11 @@ const etapes = [
   "Vous relisez et corrigez, puis exportez en Word ou PDF.",
 ];
 
+// Le dépôt n'est proposé que si les clés du stockage et de la transcription sont réglées.
+const transcriptionConfigured = Boolean(
+  process.env.BLOB_READ_WRITE_TOKEN && process.env.ELEVENLABS_API_KEY,
+);
+
 export default function Home() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-16">
@@ -29,7 +34,7 @@ export default function Home() {
           بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
         </p>
 
-        <UploadForm />
+        <UploadForm enabled={transcriptionConfigured} />
 
         <h2 className="mt-12 text-xl font-semibold text-zinc-900">
           Comment ça marche

@@ -38,11 +38,20 @@ function safeFileName(name: string): string {
   return name.normalize("NFKD").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-export default function UploadForm() {
+// `enabled` vaut false tant que le stockage et la transcription ne sont pas configurés.
+export default function UploadForm({ enabled }: { enabled: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>({ step: "idle" });
 
   const busy = status.step === "uploading" || status.step === "transcribing";
+
+  if (!enabled) {
+    return (
+      <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+        Le dépôt de fichiers n&apos;est pas encore activé sur ce site.
+      </p>
+    );
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -89,7 +98,7 @@ export default function UploadForm() {
     <div className="mt-8">
       <form onSubmit={handleSubmit} className="space-y-4">
         <label className="block rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-6 py-8 text-center hover:border-emerald-400">
-          <span className="block font-medium text-zinc-800">
+          <span dir="auto" className="block font-medium text-zinc-800">
             {file ? file.name : "Choisir un fichier audio ou vidéo"}
           </span>
           <span className="mt-1 block text-sm text-zinc-500">
@@ -136,7 +145,7 @@ export default function UploadForm() {
         <section className="mt-8">
           <h2 className="text-xl font-semibold text-zinc-900">Transcription brute</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            {status.fileName} · Langue principale détectée :{" "}
+            <bdi>{status.fileName}</bdi> · Langue principale détectée :{" "}
             {languageName(status.transcription.languageCode)}
             {status.transcription.durationSeconds !== null &&
               ` · Durée : ${formatDuration(status.transcription.durationSeconds)}`}
