@@ -14,10 +14,30 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), var(--font-arabic), Arial, Helvetica, sans-serif;
 }
 
-/* Texte transcrit : police latine, avec la police arabe pour les mots arabes. */
-.transcript {
-  font-family: var(--font-geist-sans), var(--font-arabic), sans-serif;
+/* Lignes en arabe : police arabe, plus grande pour bien lire les harakat. */
+.font-arabic {
+  font-family: var(--font-arabic), var(--font-geist-sans), serif;
+}
+
+/* PDF : on n'imprime que le texte (transcription et traduction). */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  main,
+  .page {
+    padding: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+  }
+  #document {
+    margin-top: 0 !important;
+  }
+  #document p,
+  #document div {
+    break-inside: avoid;
+  }
 }
