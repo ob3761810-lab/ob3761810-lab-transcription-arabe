@@ -3,7 +3,7 @@
 // Toute l'application : choisir un fichier, obtenir le texte avec les harakat,
 // le traduire, puis le télécharger en PDF.
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { splitIntoWavChunks } from "@/lib/audio";
 
 type Status =
@@ -63,6 +63,16 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const nextPart = useRef(0);
 
   const busy = status.step === "preparing" || status.step === "transcribing";
+
+  // Adresse locale du fichier choisi, pour l'écouter ou le regarder dans la page.
+  // Le fichier reste sur l'appareil : rien n'est envoyé.
+  const mediaUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => {
+    return () => {
+      if (mediaUrl) URL.revokeObjectURL(mediaUrl);
+    };
+  }, [mediaUrl]);
+  const isVideo = file?.type.startsWith("video/") ?? false;
 
   if (!ready) {
     return (
@@ -194,6 +204,16 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           Transcrire
         </button>
       </form>
+
+      {mediaUrl && (
+        <div className="no-print sticky top-0 z-10 -mx-2 mt-6 bg-white px-2 py-2">
+          {isVideo ? (
+            <video src={mediaUrl} controls className="max-h-64 w-full rounded-xl bg-black" />
+          ) : (
+            <audio src={mediaUrl} controls className="w-full" />
+          )}
+        </div>
+      )}
 
       <div className="no-print">
         {status.step === "preparing" && (
