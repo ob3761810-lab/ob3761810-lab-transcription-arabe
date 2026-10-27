@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
+import { formatTime, isArabic, removeHarakat, toLines } from "@/lib/text";
 
 type Status =
   | { step: "idle" }
@@ -27,32 +28,10 @@ const MAX_RETRIES = 4;
 
 const wait = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
-// Une ligne est en arabe si sa première lettre est arabe.
-function isArabic(line: string): boolean {
-  const firstLetter = line.match(/[A-Za-zÀ-ÿ؀-ۿ]/)?.[0] ?? "";
-  return /[؀-ۿ]/.test(firstLetter);
-}
-
-// Affiche un minutage : 0:00, 2:00… ou 1:02:00 au-delà d'une heure.
-function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = String(Math.floor(seconds % 60)).padStart(2, "0");
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
-}
-
-// Enlève les harakat (voyelles et signes de vocalisation) d'un texte arabe.
-function removeHarakat(text: string): string {
-  return text.replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "");
-}
-
 function Lines({ text }: { text: string }) {
   return (
     <div className="space-y-2">
-      {text
-        .split("\n")
-        .filter((line) => line.trim() !== "")
-        .map((line, index) =>
+      {toLines(text).map((line, index) =>
           isArabic(line) ? (
             <p key={index} dir="rtl" className="font-arabic text-2xl leading-[2.2]">
               {line}
@@ -78,6 +57,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   // Choix d'affichage : avec ou sans harakat (le PDF suit ce choix).
   const [withHarakat, setWithHarakat] = useState(true);
   const shown = (text: string) => (withHarakat ? text : removeHarakat(text));
+  const [wordError, setWordError] = useState("");
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
   const chunks = useRef<Blob[]>([]);
   const nextPart = useRef(0);
@@ -179,6 +159,31 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     if (!player.current) return;
     player.current.currentTime = seconds;
     player.current.play().catch(() => {});
+  }
+
+  // Télécharge le même contenu que le PDF au format Word (.docx), modifiable.
+  async function handleWordDownload() {
+    if (!file) return;
+    setWordError("");
+    try {
+      // La bibliothèque Word n'est chargée qu'au moment du clic, pour garder la page légère.
+      const { buildWordFile } = await import("@/lib/word");
+      const blob = await buildWordFile({
+        fileName: file.name,
+        sections: parts
+          .map((text, index) => ({ time: formatTime(index * CHUNK_SECONDS), text: shown(text) }))
+          .filter((section) => section.text.trim() !== ""),
+        translation: translation && { label: translation.label, text: shown(translation.text) },
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${file.name.replace(/\.[^.]+$/, "")} - transcription.docx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) {
+      console.error(error);
+      setWordError("Le fichier Word n'a pas pu être créé. Réessayez dans un instant.");
+    }
   }
 
   async function handleTranslate(code: string, label: string) {
@@ -373,17 +378,31 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           </div>
 
           <div>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="w-full rounded-xl bg-zinc-900 px-6 py-3 font-medium text-white hover:bg-zinc-700"
-            >
-              Télécharger en PDF
-            </button>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="rounded-xl bg-zinc-900 px-6 py-3 font-medium text-white hover:bg-zinc-700"
+              >
+                Télécharger en PDF
+              </button>
+              <button
+                type="button"
+                onClick={handleWordDownload}
+                className="rounded-xl bg-blue-700 px-6 py-3 font-medium text-white hover:bg-blue-800"
+              >
+                Télécharger en Word
+              </button>
+            </div>
             <p className="mt-2 text-sm text-zinc-500">
-              Dans la fenêtre qui s&apos;ouvre, choisissez « Enregistrer au format PDF » comme
-              imprimante.
+              PDF : dans la fenêtre qui s&apos;ouvre, choisissez « Enregistrer au format PDF » comme
+              imprimante. Word : le fichier se télécharge directement et peut être modifié.
             </p>
+            {wordError && (
+              <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+                {wordError}
+              </p>
+            )}
           </div>
         </div>
       )}
