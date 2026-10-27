@@ -69,7 +69,7 @@ export async function buildWordFile({ fileName, sections, translation }: WordCon
   ];
 
   for (const section of sections) {
-    paragraphs.push(note(section.time, "047857"));
+    if (section.time) paragraphs.push(note(section.time, "047857"));
     paragraphs.push(...toLines(section.text).map(line));
   }
 

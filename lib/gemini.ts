@@ -86,6 +86,35 @@ export async function transcribeWithHarakat(audio: ArrayBuffer, version: Version
   );
 }
 
+// Lecture d'un PDF (texte ou scan) : texte de chaque page avec les harakat sur l'arabe.
+// `pdf` contient les pages `firstPage` à `lastPage` du document d'origine.
+export async function vocalizePdf(
+  pdf: ArrayBuffer,
+  version: Version,
+  firstPage: number,
+  lastPage: number,
+): Promise<string> {
+  const rules = `This PDF contains pages ${firstPage} to ${lastPage} of a document.
+Copy the text of every page, in reading order.
+Rules:
+- Before the text of each page, write a line containing only: — Page N — (N = ${firstPage} for the first page of this PDF, then ${firstPage + 1}, and so on).
+- Keep the words exactly as written. Never translate, never summarize, never skip a passage.
+- Add full harakat (tashkil) to every Arabic word, according to the grammar of the sentence. Keep a harakah already written in the PDF unless it is clearly wrong.
+- Do not add anything to French or English words.
+- Start a new line at the end of each sentence or line of verse.
+- If you are not sure about the spelling or the harakat of an Arabic word, wrap that single word in ⟦ and ⟧. Do this only for genuinely uncertain words.
+- Ignore page headers, footers and page numbers printed on the page.
+- Output only the text: no title, no comment, no explanation.
+- Never add a verse number, a hadith reference or a scholar's name that is not written in the PDF.`;
+  return askGemini(
+    [
+      { inline_data: { mime_type: "application/pdf", data: Buffer.from(pdf).toString("base64") } },
+      { text: rules },
+    ],
+    version,
+  );
+}
+
 export const LANGUAGES = {
   fr: "French",
   en: "English",

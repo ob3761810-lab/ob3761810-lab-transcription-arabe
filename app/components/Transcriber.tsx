@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
+import { isPdf, PageTooLargeError, splitPdf } from "@/lib/pdf";
 import type { Issue, Version } from "@/lib/gemini";
 import {
   countDoubts,
@@ -46,8 +47,9 @@ const wait = (seconds: number) => new Promise((resolve) => setTimeout(resolve, s
 function MixedText({ text }: { text: string }) {
   return (
     <>
-      {text.split(/([\u0600-\u06FF][\u0600-\u06FF\s]*[\u0600-\u06FF]|[\u0600-\u06FF])/).map(
-        (piece, index) =>
+      {text
+        .split(/([\u0600-\u06FF][\u0600-\u06FF\s]*[\u0600-\u06FF]|[\u0600-\u06FF])/)
+        .map((piece, index) =>
           index % 2 === 1 ? (
             <bdi key={index} dir="rtl" className="font-arabic">
               {piece}
@@ -55,7 +57,7 @@ function MixedText({ text }: { text: string }) {
           ) : (
             piece
           ),
-      )}
+        )}
     </>
   );
 }
@@ -126,11 +128,13 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     found?: number;
   }>({ step: "idle" });
   // Mot douteux en cours de correction : partie, numéro du mot dans la partie, texte saisi.
-  const [editing, setEditing] = useState<{ part: number; n: number; value: string } | null>(
-    null,
-  );
+  const [editing, setEditing] = useState<{ part: number; n: number; value: string } | null>(null);
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
   const chunks = useRef<Blob[]>([]);
+  // Pour un PDF : pages contenues dans chaque extrait (null pour un audio ou une vidéo).
+  const pageRanges = useRef<{ first: number; last: number }[] | null>(null);
+  // Titre de chaque partie : minutage (« 2:00 ») ou pages (« Pages 4 à 6 »).
+  const [sectionLabels, setSectionLabels] = useState<string[]>([]);
   const nextPart = useRef(0);
   // Lecteur audio ou vidéo, pour y aller au minutage cliqué.
   const player = useRef<HTMLMediaElement | null>(null);
@@ -149,6 +153,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     };
   }, [mediaUrl]);
   const isVideo = file?.type.startsWith("video/") ?? false;
+  const pdfMode = file ? isPdf(file) : false;
+  const showPlayer = mediaUrl !== null && !pdfMode;
 
   if (!ready) {
     return (
@@ -168,7 +174,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   ): Promise<{ text: string; lite: boolean }> {
     for (let attempt = 0; ; attempt++) {
       const used = versionRef.current;
-      const response = await fetch(`/api/transcribe?version=${used}`, {
+      const pages = pageRanges.current?.[part - 1];
+      const pageQuery = pages ? `&first=${pages.first}&last=${pages.last}` : "";
+      const response = await fetch(`/api/transcribe?version=${used}${pageQuery}`, {
         method: "POST",
         body: chunk,
       });
@@ -230,7 +238,23 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
     try {
       setStatus({ step: "preparing" });
-      chunks.current = await splitIntoWavChunks(file);
+      if (pdfMode) {
+        const pdfChunks = await splitPdf(file);
+        chunks.current = pdfChunks.map((chunk) => chunk.blob);
+        pageRanges.current = pdfChunks.map(({ firstPage, lastPage }) => ({
+          first: firstPage,
+          last: lastPage,
+        }));
+        setSectionLabels(
+          pdfChunks.map(({ firstPage, lastPage }) =>
+            firstPage === lastPage ? `Page ${firstPage}` : `Pages ${firstPage} à ${lastPage}`,
+          ),
+        );
+      } else {
+        chunks.current = await splitIntoWavChunks(file);
+        pageRanges.current = null;
+        setSectionLabels(chunks.current.map((_, index) => formatTime(index * CHUNK_SECONDS)));
+      }
       nextPart.current = 0;
     } catch (error) {
       console.error(error);
@@ -238,7 +262,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         step: "error",
         canResume: false,
         message:
-          "Ce fichier n'a pas pu être lu. Vérifiez qu'il s'agit bien d'un fichier audio ou vidéo. S'il est très long, essayez avec un fichier plus court.",
+          error instanceof PageTooLargeError
+            ? `Ce PDF contient une ${error.message} trop lourde pour être envoyée (scan en très haute qualité). Essayez avec un PDF plus léger.`
+            : pdfMode
+              ? "Ce PDF n'a pas pu être lu. Vérifiez qu'il n'est pas protégé par un mot de passe."
+              : "Ce fichier n'a pas pu être lu. Vérifiez qu'il s'agit bien d'un fichier audio ou vidéo. S'il est très long, essayez avec un fichier plus court.",
       });
       return;
     }
@@ -277,12 +305,17 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         ...Object.fromEntries(issues.map((issue) => [issue.word, issue])),
       }));
       setParts((previous) =>
-        previous.map((text) => issues.reduce((marked, issue) => markWord(marked, issue.word), text)),
+        previous.map((text) =>
+          issues.reduce((marked, issue) => markWord(marked, issue.word), text),
+        ),
       );
       setCheck({ step: "done", found: issues.length });
     } catch (error) {
       console.error(error);
-      setCheck({ step: "error", message: "La relecture n'a pas pu être réalisée. Réessayez dans un instant." });
+      setCheck({
+        step: "error",
+        message: "La relecture n'a pas pu être réalisée. Réessayez dans un instant.",
+      });
     }
   }
 
@@ -413,7 +446,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       const blob = await buildWordFile({
         fileName: file.name,
         sections: parts
-          .map((text, index) => ({ time: formatTime(index * CHUNK_SECONDS), text: shown(text) }))
+          .map((text, index) => ({
+            time: pdfMode && text.includes("— Page") ? "" : (sectionLabels[index] ?? ""),
+            text: shown(text),
+          }))
           .filter((section) => section.text.trim() !== ""),
         translation: translation && { label: translation.label, text: shown(translation.text) },
       });
@@ -457,17 +493,17 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
   return (
     <div className="mt-8">
-      <form onSubmit={handleTranscribe} className="no-print space-y-4">
+      <form onSubmit={handleTranscribe} className="no-print mx-auto max-w-3xl space-y-4">
         <label className="block cursor-pointer rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-6 py-8 text-center hover:border-emerald-400">
           <span dir="auto" className="block font-medium text-zinc-800">
-            {file ? file.name : "Choisir un fichier audio ou vidéo"}
+            {file ? file.name : "Choisir un fichier audio, vidéo ou PDF"}
           </span>
           <span className="mt-1 block text-sm text-zinc-500">
-            MP3, WAV, M4A, MP4, MOV… depuis votre ordinateur ou votre téléphone
+            MP3, WAV, M4A, MP4, MOV… pour transcrire ; PDF pour ajouter les harakat à un texte
           </span>
           <input
             type="file"
-            accept="audio/*,video/*"
+            accept="audio/*,video/*,application/pdf,.pdf"
             className="sr-only"
             disabled={busy}
             onChange={(event) => {
@@ -483,7 +519,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
             {(
               [
                 ["normale", "Normale", "Meilleure qualité des harakat."],
-                ["legere", "Légère", "Plus rapide, limite gratuite séparée, harakat moins précises."],
+                [
+                  "legere",
+                  "Légère",
+                  "Plus rapide, limite gratuite séparée, harakat moins précises.",
+                ],
               ] as const
             ).map(([value, label, help]) => (
               <label
@@ -513,241 +553,267 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           disabled={!file || busy}
           className="w-full rounded-xl bg-emerald-700 px-6 py-3 font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
         >
-          Transcrire
+          {pdfMode ? "Ajouter les harakat" : "Transcrire"}
         </button>
       </form>
 
-      {mediaUrl && (
-        <div className="no-print sticky top-0 z-10 -mx-2 mt-6 bg-white px-2 py-2">
-          {isVideo ? (
-            <video
-              ref={(element) => {
-                player.current = element;
-              }}
-              src={mediaUrl}
-              controls
-              className="max-h-64 w-full rounded-xl bg-black"
-            />
-          ) : (
-            <audio
-              ref={(element) => {
-                player.current = element;
-              }}
-              src={mediaUrl}
-              controls
-              className="w-full"
-            />
-          )}
-        </div>
-      )}
-
-      <div className="no-print">
-        {status.step === "preparing" && (
-          <p className="mt-6 text-zinc-700">Préparation du fichier…</p>
-        )}
-        {status.step === "transcribing" && (
-          <p className="mt-6 text-zinc-700">
-            {status.waiting === "limite" &&
-              `Limite gratuite de Google atteinte : nouvel essai dans ${RETRY_SECONDS} secondes…`}
-            {status.waiting === "surcharge" &&
-              `Google est momentanément surchargé : nouvel essai dans ${RETRY_SECONDS} secondes…`}
-            {status.waiting === null &&
-              `Transcription en cours… partie ${status.part} sur ${status.total}`}
-            {status.waiting !== null && version === "normale" && (
-              <button
-                type="button"
-                onClick={() => chooseVersion("legere")}
-                className="ml-2 rounded-lg border border-zinc-300 bg-white px-3 py-1 text-sm text-zinc-800 hover:border-emerald-500"
-              >
-                Passer en version légère
-              </button>
+      {/* Sur ordinateur : texte à gauche, lecteur à droite (toujours visible).
+          Sur téléphone : lecteur au-dessus du texte. */}
+      <div
+        className={
+          showPlayer
+            ? "mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start lg:gap-8 print:block"
+            : "mx-auto max-w-3xl"
+        }
+      >
+        {showPlayer && (
+          <div className="no-print sticky top-0 z-10 -mx-2 bg-white px-2 py-2 lg:order-2 lg:top-4 lg:mx-0 lg:px-0">
+            {isVideo ? (
+              <video
+                ref={(element) => {
+                  player.current = element;
+                }}
+                src={mediaUrl}
+                controls
+                className="max-h-64 w-full rounded-xl bg-black lg:max-h-[75vh]"
+              />
+            ) : (
+              <audio
+                ref={(element) => {
+                  player.current = element;
+                }}
+                src={mediaUrl}
+                controls
+                className="w-full"
+              />
             )}
-          </p>
+          </div>
         )}
-        {status.step === "error" && (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
-            <p>{status.message}</p>
-            {status.canResume && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => transcribeRemainingParts()}
-                  className="rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800"
-                >
-                  Reprendre
-                </button>
-                {version === "normale" && (
+
+        <div className="min-w-0 lg:order-1">
+          <div className="no-print">
+            {status.step === "preparing" && (
+              <p className="mt-6 text-zinc-700">Préparation du fichier…</p>
+            )}
+            {status.step === "transcribing" && (
+              <p className="mt-6 text-zinc-700">
+                {status.waiting === "limite" &&
+                  `Limite gratuite de Google atteinte : nouvel essai dans ${RETRY_SECONDS} secondes…`}
+                {status.waiting === "surcharge" &&
+                  `Google est momentanément surchargé : nouvel essai dans ${RETRY_SECONDS} secondes…`}
+                {status.waiting === null &&
+                  (pdfMode
+                    ? `Lecture du PDF… ${sectionLabels[status.part - 1] ?? ""} (partie ${status.part} sur ${status.total})`
+                    : `Transcription en cours… partie ${status.part} sur ${status.total}`)}
+                {status.waiting !== null && version === "normale" && (
                   <button
                     type="button"
-                    onClick={() => {
-                      chooseVersion("legere");
-                      transcribeRemainingParts();
-                    }}
-                    className="rounded-lg border border-red-300 bg-white px-4 py-2 font-medium text-red-800 hover:bg-red-50"
+                    onClick={() => chooseVersion("legere")}
+                    className="ml-2 rounded-lg border border-zinc-300 bg-white px-3 py-1 text-sm text-zinc-800 hover:border-emerald-500"
                   >
-                    Reprendre en version légère
+                    Passer en version légère
                   </button>
+                )}
+              </p>
+            )}
+            {status.step === "error" && (
+              <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+                <p>{status.message}</p>
+                {status.canResume && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => transcribeRemainingParts()}
+                      className="rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800"
+                    >
+                      Reprendre
+                    </button>
+                    {version === "normale" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          chooseVersion("legere");
+                          transcribeRemainingParts();
+                        }}
+                        className="rounded-lg border border-red-300 bg-white px-4 py-2 font-medium text-red-800 hover:bg-red-50"
+                      >
+                        Reprendre en version légère
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {transcript && (
-        <div id="document" className="mt-8">
-          <h2 className="text-xl font-semibold text-zinc-900">Transcription</h2>
-          {file && (
-            <p className="mt-1 text-sm text-zinc-500">
-              <bdi>{file.name}</bdi>
-            </p>
-          )}
-          <p className="mt-1 text-sm text-amber-700">
-            Texte non relu : il peut contenir des erreurs de transcription ou de harakat.
-          </p>
-          {check.step === "checking" && (
-            <p className="no-print mt-3 text-sm text-zinc-700">
-              Relecture de l&apos;orthographe et des harakat en cours…
-            </p>
-          )}
-          {check.step === "done" && check.found === 0 && doubtCount === 0 && (
-            <p className="no-print mt-3 text-sm text-emerald-700">
-              Relecture terminée : aucun mot signalé (une relecture humaine reste conseillée).
-            </p>
-          )}
-          {check.step === "error" && (
-            <div className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
-              {check.message}{" "}
-              <button
-                type="button"
-                onClick={() => proofread(parts)}
-                className="ml-1 font-medium underline"
-              >
-                Relancer la relecture
-              </button>
-            </div>
-          )}
-          {doubtCount > 0 && (
-            <p className="hidden text-sm text-red-600 print:block">
-              En rouge : mots dont l&apos;orthographe ou les harakat sont à vérifier.
-            </p>
-          )}
-          {doubtCount > 0 && (
-            <p className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
-              {doubtCount === 1
-                ? "1 mot à vérifier est en rouge"
-                : `${doubtCount} mots à vérifier sont en rouge`}{" "}
-              : cliquez dessus pour choisir un mot proposé ou écrire votre correction. Ils restent en
-              rouge dans le PDF et le Word tant qu&apos;ils ne sont pas vérifiés. Les mots corrigés sont
-              soulignés en vert : cliquez dessus pour les modifier à nouveau.
-            </p>
-          )}
-          <div className="no-print mt-4 inline-flex rounded-lg border border-zinc-300 p-1">
-            {[true, false].map((value) => (
-              <button
-                key={String(value)}
-                type="button"
-                onClick={() => setWithHarakat(value)}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium ${
-                  withHarakat === value
-                    ? "bg-emerald-700 text-white"
-                    : "text-zinc-700 hover:bg-zinc-100"
-                }`}
-              >
-                {value ? "Avec harakat" : "Sans harakat"}
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 space-y-6 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
-            {parts.map((text, index) =>
-              text.trim() === "" ? null : (
-                <div key={index}>
+          {transcript && (
+            <div id="document" className="mt-8">
+              <h2 className="text-xl font-semibold text-zinc-900">
+                {pdfMode ? "Texte avec harakat" : "Transcription"}
+              </h2>
+              {file && (
+                <p className="mt-1 text-sm text-zinc-500">
+                  <bdi>{file.name}</bdi>
+                </p>
+              )}
+              <p className="mt-1 text-sm text-amber-700">
+                Texte non relu : il peut contenir des erreurs de transcription ou de harakat.
+              </p>
+              {check.step === "checking" && (
+                <p className="no-print mt-3 text-sm text-zinc-700">
+                  Relecture de l&apos;orthographe et des harakat en cours…
+                </p>
+              )}
+              {check.step === "done" && check.found === 0 && doubtCount === 0 && (
+                <p className="no-print mt-3 text-sm text-emerald-700">
+                  Relecture terminée : aucun mot signalé (une relecture humaine reste conseillée).
+                </p>
+              )}
+              {check.step === "error" && (
+                <div className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+                  {check.message}{" "}
                   <button
                     type="button"
-                    onClick={() => playFrom(index * CHUNK_SECONDS)}
-                    title="Écouter à partir de ce moment"
-                    className="mb-2 rounded-md bg-emerald-50 px-2 py-0.5 font-mono text-sm text-emerald-800 hover:bg-emerald-100"
+                    onClick={() => proofread(parts)}
+                    className="ml-1 font-medium underline"
                   >
-                    ▶ {formatTime(index * CHUNK_SECONDS)}
+                    Relancer la relecture
                   </button>
-                  {liteParts[index] && (
-                    <span className="no-print ml-2 text-xs text-amber-700">
-                      Transcrit en version légère : vérifiez bien les harakat.
-                    </span>
-                  )}
-                  <Lines text={shown(text)} renderMark={renderMark(index)} />
                 </div>
-              ),
-            )}
-          </div>
-
-          {translation && (
-            <section className="mt-8">
-              <h2 className="text-xl font-semibold text-zinc-900">
-                Traduction ({translation.label})
-              </h2>
-              <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
-                <Lines text={shown(translation.text)} />
+              )}
+              {doubtCount > 0 && (
+                <p className="hidden text-sm text-red-600 print:block">
+                  En rouge : mots dont l&apos;orthographe ou les harakat sont à vérifier.
+                </p>
+              )}
+              {doubtCount > 0 && (
+                <p className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+                  {doubtCount === 1
+                    ? "1 mot à vérifier est en rouge"
+                    : `${doubtCount} mots à vérifier sont en rouge`}{" "}
+                  : cliquez dessus pour choisir un mot proposé ou écrire votre correction. Ils
+                  restent en rouge dans le PDF et le Word tant qu&apos;ils ne sont pas vérifiés. Les
+                  mots corrigés sont soulignés en vert : cliquez dessus pour les modifier à nouveau.
+                </p>
+              )}
+              <div className="no-print mt-4 inline-flex rounded-lg border border-zinc-300 p-1">
+                {[true, false].map((value) => (
+                  <button
+                    key={String(value)}
+                    type="button"
+                    onClick={() => setWithHarakat(value)}
+                    className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+                      withHarakat === value
+                        ? "bg-emerald-700 text-white"
+                        : "text-zinc-700 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {value ? "Avec harakat" : "Sans harakat"}
+                  </button>
+                ))}
               </div>
-            </section>
+              <div className="mt-4 space-y-6 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
+                {parts.map((text, index) =>
+                  text.trim() === "" ? null : (
+                    <div key={index}>
+                      {pdfMode ? (
+                        // Inutile si Google a déjà indiqué chaque page (« — Page 4 — ») dans le texte.
+                        !text.includes("— Page") && (
+                          <span className="mb-2 inline-block rounded-md bg-zinc-100 px-2 py-0.5 text-sm text-zinc-700">
+                            {sectionLabels[index]}
+                          </span>
+                        )
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => playFrom(index * CHUNK_SECONDS)}
+                          title="Écouter à partir de ce moment"
+                          className="mb-2 rounded-md bg-emerald-50 px-2 py-0.5 font-mono text-sm text-emerald-800 hover:bg-emerald-100"
+                        >
+                          ▶ {sectionLabels[index]}
+                        </button>
+                      )}
+                      {liteParts[index] && (
+                        <span className="no-print ml-2 text-xs text-amber-700">
+                          Fait en version légère : vérifiez bien les harakat.
+                        </span>
+                      )}
+                      <Lines text={shown(text)} renderMark={renderMark(index)} />
+                    </div>
+                  ),
+                )}
+              </div>
+
+              {translation && (
+                <section className="mt-8">
+                  <h2 className="text-xl font-semibold text-zinc-900">
+                    Traduction ({translation.label})
+                  </h2>
+                  <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
+                    <Lines text={shown(translation.text)} />
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {status.step === "done" && transcript && (
+            <div className="no-print mt-8 space-y-4">
+              <div>
+                <p className="font-medium text-zinc-900">Traduire en :</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {TRANSLATIONS.map(({ code, label }) => (
+                    <button
+                      key={code}
+                      type="button"
+                      disabled={translating}
+                      onClick={() => handleTranslate(code, label)}
+                      className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-zinc-800 hover:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {translating && <p className="mt-2 text-zinc-700">Traduction en cours…</p>}
+                {translationError && (
+                  <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+                    {translationError}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="rounded-xl bg-zinc-900 px-6 py-3 font-medium text-white hover:bg-zinc-700"
+                  >
+                    Télécharger en PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleWordDownload}
+                    className="rounded-xl bg-blue-700 px-6 py-3 font-medium text-white hover:bg-blue-800"
+                  >
+                    Télécharger en Word
+                  </button>
+                </div>
+                <p className="mt-2 text-sm text-zinc-500">
+                  PDF : dans la fenêtre qui s&apos;ouvre, choisissez « Enregistrer au format PDF »
+                  comme imprimante. Word : le fichier se télécharge directement et peut être
+                  modifié.
+                </p>
+                {wordError && (
+                  <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+                    {wordError}
+                  </p>
+                )}
+              </div>
+            </div>
           )}
         </div>
-      )}
-
-      {status.step === "done" && transcript && (
-        <div className="no-print mt-8 space-y-4">
-          <div>
-            <p className="font-medium text-zinc-900">Traduire en :</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {TRANSLATIONS.map(({ code, label }) => (
-                <button
-                  key={code}
-                  type="button"
-                  disabled={translating}
-                  onClick={() => handleTranslate(code, label)}
-                  className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-zinc-800 hover:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {translating && <p className="mt-2 text-zinc-700">Traduction en cours…</p>}
-            {translationError && (
-              <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
-                {translationError}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="rounded-xl bg-zinc-900 px-6 py-3 font-medium text-white hover:bg-zinc-700"
-              >
-                Télécharger en PDF
-              </button>
-              <button
-                type="button"
-                onClick={handleWordDownload}
-                className="rounded-xl bg-blue-700 px-6 py-3 font-medium text-white hover:bg-blue-800"
-              >
-                Télécharger en Word
-              </button>
-            </div>
-            <p className="mt-2 text-sm text-zinc-500">
-              PDF : dans la fenêtre qui s&apos;ouvre, choisissez « Enregistrer au format PDF » comme
-              imprimante. Word : le fichier se télécharge directement et peut être modifié.
-            </p>
-            {wordError && (
-              <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
-                {wordError}
-              </p>
-            )}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

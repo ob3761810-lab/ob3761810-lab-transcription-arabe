@@ -1,20 +1,36 @@
-// Transcrit un extrait audio (WAV envoyé par le navigateur) avec les harakat.
+// Transcrit un extrait audio (WAV envoyé par le navigateur) avec les harakat,
+// ou lit quelques pages d'un PDF et y ajoute les harakat.
 // Rien n'est conservé : l'extrait est transmis à Gemini puis oublié.
 
 import { NextResponse } from "next/server";
-import { BusyError, RateLimitError, toVersion, transcribeWithHarakat } from "@/lib/gemini";
+import {
+  BusyError,
+  RateLimitError,
+  toVersion,
+  transcribeWithHarakat,
+  vocalizePdf,
+} from "@/lib/gemini";
 
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
-    const audio = await request.arrayBuffer();
-    if (audio.byteLength === 0) {
-      return NextResponse.json({ error: "Extrait audio vide." }, { status: 400 });
+    const data = await request.arrayBuffer();
+    if (data.byteLength === 0) {
+      return NextResponse.json({ error: "Extrait vide." }, { status: 400 });
     }
     // Version choisie par l'utilisateur : ?version=normale ou ?version=legere
-    const version = toVersion(new URL(request.url).searchParams.get("version"));
-    const text = await transcribeWithHarakat(audio, version);
+    const params = new URL(request.url).searchParams;
+    const version = toVersion(params.get("version"));
+    const text =
+      request.headers.get("content-type") === "application/pdf"
+        ? await vocalizePdf(
+            data,
+            version,
+            Number(params.get("first")) || 1,
+            Number(params.get("last")) || 1,
+          )
+        : await transcribeWithHarakat(data, version);
     return NextResponse.json({ text, lite: version === "legere" });
   } catch (error) {
     if (error instanceof RateLimitError) {
