@@ -155,6 +155,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const isVideo = file?.type.startsWith("video/") ?? false;
   const pdfMode = file ? isPdf(file) : false;
   const showPlayer = mediaUrl !== null && !pdfMode;
+  // Deux colonnes (texte à gauche, lecteur à droite) seulement quand il y a du texte à afficher.
+  const sideBySide = showPlayer && parts.some((text) => text.trim() !== "");
 
   if (!ready) {
     return (
@@ -557,13 +559,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         </button>
       </form>
 
-      {/* Sur ordinateur : texte à gauche, lecteur à droite (toujours visible).
+      {/* Avant le texte : lecteur en haut, sous le bouton.
+          Avec le texte, sur ordinateur : texte à gauche, lecteur à droite (toujours visible).
           Sur téléphone : lecteur au-dessus du texte. */}
       <div
         className={
-          showPlayer
+          sideBySide
             ? "mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start lg:gap-8 print:block"
-            : "mx-auto max-w-3xl"
+            : `mx-auto max-w-3xl ${showPlayer ? "mt-6" : ""}`
         }
       >
         {showPlayer && (
