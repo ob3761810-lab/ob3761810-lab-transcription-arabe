@@ -9,8 +9,9 @@ export function isArabic(line: string): boolean {
 }
 
 // Enlève les harakat (voyelles et signes de vocalisation) d'un texte arabe.
+// La chadda (\u0651) est conservée : elle marque une lettre doublée et peut changer le sens du mot.
 export function removeHarakat(text: string): string {
-  return text.replace(/[ً-ٰٟۖ-ۭ]/g, "");
+  return text.replace(/[\u064B-\u0650\u0652-\u065F\u0670\u06D6-\u06ED]/g, "");
 }
 
 // Affiche un minutage : 0:00, 2:00… ou 1:02:00 au-delà d'une heure.
