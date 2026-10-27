@@ -38,6 +38,8 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   un par un à Gemini (`vocalizeText`).
 - PDF téléchargé : impression du navigateur (« Enregistrer au format PDF »), qui affiche parfaitement l'arabe.
 - Word : bibliothèque `docx` (`lib/word.ts`), fichier créé dans le navigateur, arabe en droite-à-gauche.
+- Nom du site : « Harakat Nass » (حَرَكَاتُ النَّصِّ). Style classique islamique : vert profond, doré,
+  fond crème, motif géométrique dans l'en-tête, police arabe Amiri. Couleurs dans `app/globals.css`.
 - Pas de service payant sans mon accord.
 
 ## Règles de sécurité (obligatoires)
