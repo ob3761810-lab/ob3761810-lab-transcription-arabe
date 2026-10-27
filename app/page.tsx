@@ -1,45 +1,22 @@
-const etapes = [
-  "Déposez un fichier audio ou vidéo depuis votre ordinateur.",
-  "Le texte est transcrit (arabe, français, anglais).",
-  "Les harakat sont ajoutées sur l'arabe, les mots incertains sont signalés.",
-  "Le texte est découpé en chapitres avec horodatage.",
-  "Vous relisez et corrigez, puis exportez en Word ou PDF.",
-];
+import Transcriber from "@/app/components/Transcriber";
+
+// L'application ne fonctionne que si la clé Google Gemini est réglée sur Vercel.
+const ready = Boolean(process.env.GEMINI_API_KEY);
 
 export default function Home() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-16">
-      <div className="w-full max-w-2xl rounded-2xl bg-white p-10 shadow-sm">
-        <h1 className="text-3xl font-semibold text-zinc-900">
-          Transcription arabe vocalisée
-        </h1>
-        <p className="mt-3 text-lg text-zinc-600">
-          Transformez un cours, une conférence ou une khoutba en document propre
-          et vocalisé.
-        </p>
+    <main className="flex flex-1 flex-col items-center bg-zinc-50 px-4 py-10 sm:py-16">
+      <div className="page w-full max-w-6xl rounded-2xl bg-white p-6 shadow-sm sm:p-10">
+        <div className="no-print mx-auto max-w-3xl">
+          <h1 className="text-3xl font-semibold text-zinc-900">Transcription arabe vocalisée</h1>
+          <p className="mt-3 text-lg text-zinc-600">
+            Déposez un audio ou une vidéo pour obtenir le texte avec les harakat, ou un PDF ou un
+            texte collé pour y ajouter les harakat. Vous pouvez ensuite le corriger, le traduire et le
+            télécharger en PDF ou en Word.
+          </p>
+        </div>
 
-        <p
-          dir="rtl"
-          lang="ar"
-          className="mt-8 rounded-xl bg-emerald-50 px-6 py-5 text-right text-3xl leading-loose text-emerald-900"
-          style={{ fontFamily: "var(--font-arabic)" }}
-        >
-          بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
-        </p>
-
-        <h2 className="mt-10 text-xl font-semibold text-zinc-900">
-          Comment ça marche
-        </h2>
-        <ol className="mt-4 list-decimal space-y-2 pl-6 text-zinc-700">
-          {etapes.map((etape) => (
-            <li key={etape}>{etape}</li>
-          ))}
-        </ol>
-
-        <p className="mt-10 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Application en préparation : le dépôt de fichiers arrive à la
-          prochaine étape.
-        </p>
+        <Transcriber ready={ready} />
       </div>
     </main>
   );
