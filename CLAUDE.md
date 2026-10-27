@@ -7,9 +7,10 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
 ## Ce que fait l'application (rien d'autre sans me demander)
 1. Je dépose un fichier audio ou vidéo depuis mon ordinateur ou mon téléphone.
 2. L'application le transcrit (arabe, français, anglais, y compris mélangés).
-3. Les harakat sont ajoutées sur l'arabe.
+3. Les harakat sont ajoutées sur l'arabe, avec un interrupteur « Avec harakat / Sans harakat ».
 4. Je peux traduire le texte (français, anglais, arabe).
-5. Je peux télécharger le texte en PDF.
+5. Je peux télécharger le texte en PDF ou en Word (modifiable).
+6. Je peux écouter ou regarder le fichier dans la page, avec un minutage cliquable toutes les 2 minutes.
 
 Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Facebook, TikTok) pour le redonner à l'utilisateur.
 
@@ -20,6 +21,7 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
 - Le fichier est préparé dans le navigateur (`lib/audio.ts`) : son extrait, mono 16 kHz, découpé en
   extraits de 2 minutes (limite de 4,5 Mo par envoi sur Vercel). Aucun fichier n'est stocké.
 - PDF : impression du navigateur (« Enregistrer au format PDF »), qui affiche parfaitement l'arabe.
+- Word : bibliothèque `docx` (`lib/word.ts`), fichier créé dans le navigateur, arabe en droite-à-gauche.
 - Pas de service payant sans mon accord.
 
 ## Règles de sécurité (obligatoires)
