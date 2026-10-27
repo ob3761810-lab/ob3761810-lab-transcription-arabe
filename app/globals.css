@@ -1,14 +1,35 @@
 @import "tailwindcss";
 
+/* Style « classique islamique » : vert profond, doré, fond crème, page couleur papier. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fbf8f1;
+  --foreground: #1c1917;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
+
+  /* Vert profond (boutons, liens, éléments actifs). */
+  --color-brand-50: #f0f7f2;
+  --color-brand-100: #dcede1;
+  --color-brand-400: #4c9a6a;
+  --color-brand-500: #2f7d50;
+  --color-brand-600: #1f6a40;
+  --color-brand-700: #145433;
+  --color-brand-800: #0f4429;
+  --color-brand-900: #0b3320;
+
+  /* Doré (bordures, ornements, titre arabe). */
+  --color-gold-100: #f6ecd2;
+  --color-gold-200: #ead9a8;
+  --color-gold-400: #c9a227;
+  --color-gold-500: #b08a1e;
+  --color-gold-700: #7a5f12;
+
+  /* Page couleur papier pour le texte. */
+  --color-paper: #fffdf7;
 }
 
 body {
@@ -17,21 +38,30 @@ body {
   font-family: var(--font-geist-sans), var(--font-arabic), Arial, Helvetica, sans-serif;
 }
 
-/* Lignes en arabe : police arabe, plus grande pour bien lire les harakat. */
+/* Lignes en arabe : police arabe (Amiri), plus grande pour bien lire les harakat. */
 .font-arabic {
-  font-family: var(--font-arabic), var(--font-geist-sans), serif;
+  font-family: var(--font-arabic), var(--font-arabic-fallback), var(--font-geist-sans), serif;
 }
 
-/* PDF : on n'imprime que le texte (transcription et traduction). */
+/* Motif géométrique discret (étoiles à huit branches) pour l'en-tête. */
+.islamic-pattern {
+  background-color: #0b3320;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23c9a227' stroke-opacity='0.35' stroke-width='1.2'%3E%3Cpath d='M32 6 L39 25 L58 32 L39 39 L32 58 L25 39 L6 32 L25 25 Z'/%3E%3Cpath d='M13.6 13.6 L32 21 L50.4 13.6 L43 32 L50.4 50.4 L32 43 L13.6 50.4 L21 32 Z'/%3E%3Ccircle cx='32' cy='32' r='5'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 64px 64px;
+}
+
+/* PDF : on n'imprime que le texte (transcription et traduction), sur fond blanc. */
 @media print {
   .no-print {
     display: none !important;
   }
+  body,
   main,
   .page {
     padding: 0 !important;
     background: white !important;
     box-shadow: none !important;
+    border: none !important;
   }
   #document {
     margin-top: 0 !important;
