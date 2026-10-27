@@ -66,6 +66,7 @@ Rules:
 - Write every word in the language it is spoken in (Arabic, French or English, possibly mixed). Never translate.
 - Add full harakat (tashkil) to every Arabic word. Do not add anything to French or English words.
 - Start a new line at the end of each sentence.
+- If you are not sure about the spelling or the harakat of an Arabic word (unclear audio, uncertain ending), wrap that single word in ⟦ and ⟧, for example ⟦كَلِمَةٌ⟧. Do this only for genuinely uncertain words, never for whole sentences.
 - Output only the transcription: no title, no comment, no explanation.
 - Never add a verse number, a hadith reference or a scholar's name that is not spoken in the audio.
 - If there is no speech, output nothing.`;

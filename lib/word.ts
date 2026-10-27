@@ -2,7 +2,7 @@
 // L'arabe est écrit de droite à gauche, le français et l'anglais de gauche à droite.
 
 import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
-import { isArabic, toLines } from "@/lib/text";
+import { isArabic, splitDoubts, toLines } from "@/lib/text";
 
 export type WordContent = {
   fileName: string;
@@ -13,28 +13,36 @@ export type WordContent = {
 // Calibri pour le français et l'anglais, Arial pour l'arabe (présente partout et lisible avec les harakat).
 const FONT = { ascii: "Calibri", hAnsi: "Calibri", cs: "Arial" };
 
+// Les mots dont Google n'était pas sûr, et qui n'ont pas été vérifiés, restent en rouge.
+const RED = "DC2626";
+
 function line(text: string): Paragraph {
-  if (isArabic(text)) {
+  const arabic = isArabic(text);
+  const runs = splitDoubts(text).map(
+    (segment) =>
+      new TextRun({
+        text: segment.text,
+        font: FONT,
+        color: segment.doubtful ? RED : undefined,
+        ...(arabic
+          ? {
+              rightToLeft: true,
+              size: 32,
+              sizeComplexScript: 32,
+              language: { bidirectional: "ar-SA" },
+            }
+          : { size: 24, sizeComplexScript: 28 }),
+      }),
+  );
+  if (arabic) {
     return new Paragraph({
       bidirectional: true,
       alignment: AlignmentType.START,
       spacing: { after: 160, line: 400 },
-      children: [
-        new TextRun({
-          text,
-          rightToLeft: true,
-          font: FONT,
-          size: 32,
-          sizeComplexScript: 32,
-          language: { bidirectional: "ar-SA" },
-        }),
-      ],
+      children: runs,
     });
   }
-  return new Paragraph({
-    spacing: { after: 160 },
-    children: [new TextRun({ text, font: FONT, size: 24, sizeComplexScript: 28 })],
-  });
+  return new Paragraph({ spacing: { after: 160 }, children: runs });
 }
 
 function heading(text: string): Paragraph {
@@ -57,6 +65,7 @@ export async function buildWordFile({ fileName, sections, translation }: WordCon
     heading("Transcription"),
     note(fileName, "71717A"),
     note("Texte non relu : il peut contenir des erreurs de transcription ou de harakat.", "B45309"),
+    note("En rouge : mots dont l'orthographe ou les harakat sont à vérifier.", RED),
   ];
 
   for (const section of sections) {

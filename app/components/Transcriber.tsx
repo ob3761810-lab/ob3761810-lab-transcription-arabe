@@ -5,7 +5,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
-import { formatTime, isArabic, removeHarakat, toLines } from "@/lib/text";
+import {
+  countDoubts,
+  doubtAt,
+  formatTime,
+  isArabic,
+  removeDoubtMarks,
+  removeHarakat,
+  resolveDoubt,
+  splitDoubts,
+  toLines,
+} from "@/lib/text";
 
 type Status =
   | { step: "idle" }
@@ -28,20 +38,36 @@ const MAX_RETRIES = 4;
 
 const wait = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
-function Lines({ text }: { text: string }) {
+// Affiche un texte ligne par ligne. Les mots douteux (en rouge) sont dessinés par
+// `renderDoubt`, qui reçoit leur numéro dans le texte (0, 1, 2…) et le mot.
+function Lines({
+  text,
+  renderDoubt = (_, word) => <span className="text-red-600">{word}</span>,
+}: {
+  text: string;
+  renderDoubt?: (n: number, word: string) => React.ReactNode;
+}) {
+  let doubtNumber = 0;
   return (
     <div className="space-y-2">
-      {toLines(text).map((line, index) =>
-          isArabic(line) ? (
-            <p key={index} dir="rtl" className="font-arabic text-2xl leading-[2.2]">
-              {line}
-            </p>
+      {toLines(text).map((line, index) => {
+        const content = splitDoubts(line).map((segment, i) =>
+          segment.doubtful ? (
+            <span key={i}>{renderDoubt(doubtNumber++, segment.text)}</span>
           ) : (
-            <p key={index} dir="ltr" className="text-lg leading-loose">
-              {line}
-            </p>
+            segment.text
           ),
-        )}
+        );
+        return isArabic(line) ? (
+          <p key={index} dir="rtl" className="font-arabic text-2xl leading-[2.2]">
+            {content}
+          </p>
+        ) : (
+          <p key={index} dir="ltr" className="text-lg leading-loose">
+            {content}
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -60,6 +86,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [withHarakat, setWithHarakat] = useState(true);
   const shown = (text: string) => (withHarakat ? text : removeHarakat(text));
   const [wordError, setWordError] = useState("");
+  // Mot douteux en cours de correction : partie, numéro du mot dans la partie, texte saisi.
+  const [editing, setEditing] = useState<{ part: number; n: number; value: string } | null>(
+    null,
+  );
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
   const chunks = useRef<Blob[]>([]);
   const nextPart = useRef(0);
@@ -67,6 +97,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const player = useRef<HTMLMediaElement | null>(null);
 
   const transcript = parts.filter((text) => text.trim() !== "").join("\n");
+  const doubtCount = countDoubts(transcript);
 
   const busy = status.step === "preparing" || status.step === "transcribing";
 
@@ -141,6 +172,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     if (!file) return;
     setParts([]);
     setLiteParts([]);
+    setEditing(null);
     setTranslation(null);
     setTranslationError("");
 
@@ -167,6 +199,72 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     if (!player.current) return;
     player.current.currentTime = seconds;
     player.current.play().catch(() => {});
+  }
+
+  // Remplace le mot douteux en cours de correction : il n'est plus en rouge.
+  function confirmWord(word: string) {
+    if (!editing || word.trim() === "") return;
+    const { part, n } = editing;
+    setParts((previous) =>
+      previous.map((text, index) => (index === part ? resolveDoubt(text, n, word.trim()) : text)),
+    );
+    setEditing(null);
+  }
+
+  // Mot douteux : en rouge et cliquable, ou case de correction s'il est en cours de correction.
+  function renderDoubt(part: number) {
+    return function DoubtfulWord(n: number, word: string) {
+      if (editing?.part === part && editing.n === n) {
+        const original = doubtAt(parts[part], n);
+        return (
+          <span className="no-print inline-flex flex-wrap items-center gap-1 align-middle font-sans text-base">
+            <input
+              dir="auto"
+              autoFocus
+              value={editing.value}
+              onChange={(event) => setEditing({ ...editing, value: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") confirmWord(editing.value);
+                if (event.key === "Escape") setEditing(null);
+              }}
+              className="font-arabic w-40 rounded border border-red-400 px-2 py-0.5 text-xl"
+            />
+            <button
+              type="button"
+              onClick={() => confirmWord(editing.value)}
+              className="rounded bg-emerald-700 px-2 py-0.5 text-white"
+            >
+              Corriger
+            </button>
+            <button
+              type="button"
+              onClick={() => confirmWord(original)}
+              className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-zinc-700"
+            >
+              C&apos;est juste
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(null)}
+              title="Annuler"
+              className="px-1 text-zinc-500"
+            >
+              ✕
+            </button>
+          </span>
+        );
+      }
+      return (
+        <button
+          type="button"
+          title="Mot à vérifier : cliquez pour le corriger"
+          onClick={() => setEditing({ part, n, value: doubtAt(parts[part], n) })}
+          className="text-red-600 underline decoration-dotted underline-offset-4 hover:bg-red-50"
+        >
+          {word}
+        </button>
+      );
+    };
   }
 
   // Télécharge le même contenu que le PDF au format Word (.docx), modifiable.
@@ -201,14 +299,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: transcript, language: code }),
+        body: JSON.stringify({ text: removeDoubtMarks(transcript), language: code }),
       });
       const data = await response.json();
       if (!response.ok) {
         setTranslationError(data.error);
         return;
       }
-      setTranslation({ label, text: data.text });
+      setTranslation({ label, text: removeDoubtMarks(data.text) });
     } catch (error) {
       console.error(error);
       setTranslationError("La traduction n'a pas pu être réalisée. Réessayez dans un instant.");
@@ -313,6 +411,20 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           <p className="mt-1 text-sm text-amber-700">
             Texte non relu : il peut contenir des erreurs de transcription ou de harakat.
           </p>
+          {doubtCount > 0 && (
+            <p className="hidden text-sm text-red-600 print:block">
+              En rouge : mots dont l&apos;orthographe ou les harakat sont à vérifier.
+            </p>
+          )}
+          {doubtCount > 0 && (
+            <p className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+              {doubtCount === 1
+                ? "1 mot dont Google n'est pas sûr est en rouge"
+                : `${doubtCount} mots dont Google n'est pas sûr sont en rouge`}{" "}
+              : cliquez dessus pour les corriger ou les confirmer. Ils restent en rouge dans le PDF et
+              le Word tant qu&apos;ils ne sont pas vérifiés.
+            </p>
+          )}
           <div className="no-print mt-4 inline-flex rounded-lg border border-zinc-300 p-1">
             {[true, false].map((value) => (
               <button
@@ -346,7 +458,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                       Version légère (Google était saturé) : vérifiez bien les harakat.
                     </span>
                   )}
-                  <Lines text={shown(text)} />
+                  <Lines text={shown(text)} renderDoubt={renderDoubt(index)} />
                 </div>
               ),
             )}
