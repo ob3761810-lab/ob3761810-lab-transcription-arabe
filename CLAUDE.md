@@ -6,7 +6,8 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
 
 ## Ce que fait l'application (rien d'autre sans me demander)
 1. Je dépose un fichier audio ou vidéo depuis mon ordinateur ou mon téléphone, ou un PDF (texte ou scan)
-   pour y ajouter les harakat.
+   pour y ajouter les harakat, ou je colle un texte arabe (onglet « Coller un texte »). Pour un texte collé,
+   les harakat déjà écrites sont gardées : seules les manquantes sont ajoutées.
 2. L'application le transcrit (arabe, français, anglais, y compris mélangés).
 3. Les harakat sont ajoutées sur l'arabe, avec un interrupteur « Avec harakat / Sans harakat ».
 4. Je peux traduire le texte (français, anglais, arabe).
@@ -33,6 +34,8 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   extraits de 2 minutes (limite de 4,5 Mo par envoi sur Vercel). Aucun fichier n'est stocké.
 - PDF déposé : découpé dans le navigateur en paquets de 3 pages (bibliothèque `pdf-lib`, `lib/pdf.ts`),
   chacun envoyé à Gemini qui renvoie le texte avec les harakat, page par page.
+- Texte collé : découpé en morceaux d'environ 2 500 caractères (`splitText` dans `lib/text.ts`), envoyés
+  un par un à Gemini (`vocalizeText`).
 - PDF téléchargé : impression du navigateur (« Enregistrer au format PDF »), qui affiche parfaitement l'arabe.
 - Word : bibliothèque `docx` (`lib/word.ts`), fichier créé dans le navigateur, arabe en droite-à-gauche.
 - Pas de service payant sans mon accord.

@@ -10,8 +10,8 @@ export default function Home() {
         <div className="no-print mx-auto max-w-3xl">
           <h1 className="text-3xl font-semibold text-zinc-900">Transcription arabe vocalisée</h1>
           <p className="mt-3 text-lg text-zinc-600">
-            Déposez un audio ou une vidéo pour obtenir le texte avec les harakat, ou un PDF pour
-            ajouter les harakat à un texte. Vous pouvez ensuite le corriger, le traduire et le
+            Déposez un audio ou une vidéo pour obtenir le texte avec les harakat, ou un PDF ou un
+            texte collé pour y ajouter les harakat. Vous pouvez ensuite le corriger, le traduire et le
             télécharger en PDF ou en Word.
           </p>
         </div>

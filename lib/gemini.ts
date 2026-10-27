@@ -115,6 +115,24 @@ Rules:
   );
 }
 
+// Texte collé par l'utilisateur : on ajoute les harakat sans rien changer d'autre.
+// Les harakat déjà écrites par l'auteur sont gardées ; on complète seulement les manquantes.
+export async function vocalizeText(text: string, version: Version): Promise<string> {
+  const rules = `Add harakat (tashkil) to the following text.
+Rules:
+- Keep every word exactly as written, in the same order. Never translate, never summarize, never correct the wording.
+- Keep every harakah already written in the text exactly as it is, and add only the missing harakat, so that every Arabic word is fully vocalized according to the grammar of the sentence.
+- Keep the same line breaks as the original text.
+- Do not add anything to French or English words.
+- If you are not sure about the harakat of an Arabic word, wrap that single word in ⟦ and ⟧. Do this only for genuinely uncertain words.
+- Output only the vocalized text: no title, no comment, no explanation.
+- Never add a verse number, a hadith reference or a scholar's name that is not in the text.
+
+Text:
+`;
+  return askGemini([{ text: rules + text }], version);
+}
+
 export const LANGUAGES = {
   fr: "French",
   en: "English",

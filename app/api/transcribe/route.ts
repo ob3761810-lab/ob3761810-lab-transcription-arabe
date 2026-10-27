@@ -1,5 +1,5 @@
 // Transcrit un extrait audio (WAV envoyé par le navigateur) avec les harakat,
-// ou lit quelques pages d'un PDF et y ajoute les harakat.
+// ou lit quelques pages d'un PDF, ou un morceau de texte collé, et y ajoute les harakat.
 // Rien n'est conservé : l'extrait est transmis à Gemini puis oublié.
 
 import { NextResponse } from "next/server";
@@ -9,6 +9,7 @@ import {
   toVersion,
   transcribeWithHarakat,
   vocalizePdf,
+  vocalizeText,
 } from "@/lib/gemini";
 
 export const maxDuration = 300;
@@ -22,8 +23,10 @@ export async function POST(request: Request) {
     // Version choisie par l'utilisateur : ?version=normale ou ?version=legere
     const params = new URL(request.url).searchParams;
     const version = toVersion(params.get("version"));
-    const text =
-      request.headers.get("content-type") === "application/pdf"
+    const type = request.headers.get("content-type") ?? "";
+    const text = type.startsWith("text/plain")
+      ? await vocalizeText(new TextDecoder().decode(data), version)
+      : type === "application/pdf"
         ? await vocalizePdf(
             data,
             version,

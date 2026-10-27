@@ -82,3 +82,28 @@ export function markWord(text: string, word: string): string {
   const alone = new RegExp(`(?<![\\p{L}\\p{M}⟦⟨])${escaped}(?![\\p{L}\\p{M}⟧⟩])`, "gu");
   return text.replace(alone, `⟦${word}⟧`);
 }
+
+// Découpe un long texte collé en morceaux d'environ `size` caractères, en coupant entre
+// les paragraphes (ou, pour un paragraphe trop long, après une fin de phrase).
+export function splitText(text: string, size = 2500): string[] {
+  const pieces: string[] = [];
+  let current = "";
+  const add = (block: string) => {
+    if (current && current.length + block.length + 1 > size) {
+      pieces.push(current);
+      current = "";
+    }
+    current = current ? `${current}\n${block}` : block;
+  };
+  for (const paragraph of text.split("\n")) {
+    if (paragraph.length <= size) {
+      add(paragraph);
+      continue;
+    }
+    for (const sentence of paragraph.match(/[^.!?؟۔]+[.!?؟۔]*\s*/g) ?? [paragraph]) {
+      for (let start = 0; start < sentence.length; start += size) add(sentence.slice(start, start + size));
+    }
+  }
+  if (current.trim()) pieces.push(current);
+  return pieces.filter((piece) => piece.trim() !== "");
+}

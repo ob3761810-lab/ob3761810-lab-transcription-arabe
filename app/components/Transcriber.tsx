@@ -18,6 +18,7 @@ import {
   removeHarakat,
   removeMarks,
   splitMarks,
+  splitText,
   toLines,
 } from "@/lib/text";
 
@@ -99,6 +100,9 @@ function Lines({
 
 export default function Transcriber({ ready }: { ready: boolean }) {
   const [file, setFile] = useState<File | null>(null);
+  // Source : un fichier (audio, vidéo, PDF) ou un texte arabe collé.
+  const [source, setSource] = useState<"fichier" | "texte">("fichier");
+  const [pastedText, setPastedText] = useState("");
   const [status, setStatus] = useState<Status>({ step: "idle" });
   // Texte de chaque partie de 2 minutes (la partie n commence à n × 2 minutes).
   const [parts, setParts] = useState<string[]>([]);
@@ -170,8 +174,12 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     };
   }, [mediaUrl]);
   const isVideo = file?.type.startsWith("video/") ?? false;
-  const pdfMode = file ? isPdf(file) : false;
-  const showPlayer = mediaUrl !== null && !pdfMode;
+  const textMode = source === "texte";
+  const pdfMode = !textMode && file !== null && isPdf(file);
+  // PDF ou texte collé : on ajoute seulement les harakat (pas de transcription audio).
+  const vocalizeOnly = pdfMode || textMode;
+  const showPlayer = mediaUrl !== null && !vocalizeOnly;
+  const canStart = textMode ? pastedText.trim() !== "" : file !== null;
   // Deux colonnes (texte à gauche, lecteur à droite) seulement quand il y a du texte à afficher.
   const sideBySide = showPlayer && parts.some((text) => text.trim() !== "");
 
@@ -246,7 +254,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
   async function handleTranscribe(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) return;
+    if (!canStart) return;
     setParts([]);
     setLiteParts([]);
     setEditing(null);
@@ -257,7 +265,16 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
     try {
       setStatus({ step: "preparing" });
-      if (pdfMode) {
+      if (textMode) {
+        const pieces = splitText(pastedText.trim());
+        chunks.current = pieces.map(
+          (piece) => new Blob([piece], { type: "text/plain;charset=utf-8" }),
+        );
+        pageRanges.current = null;
+        setSectionLabels(
+          pieces.length > 1 ? pieces.map((_, index) => `Partie ${index + 1}`) : [""],
+        );
+      } else if (file && isPdf(file)) {
         const pdfChunks = await splitPdf(file);
         chunks.current = pdfChunks.map((chunk) => chunk.blob);
         pageRanges.current = pdfChunks.map(({ firstPage, lastPage }) => ({
@@ -269,7 +286,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
             firstPage === lastPage ? `Page ${firstPage}` : `Pages ${firstPage} à ${lastPage}`,
           ),
         );
-      } else {
+      } else if (file) {
         chunks.current = await splitIntoWavChunks(file);
         pageRanges.current = null;
         setSectionLabels(chunks.current.map((_, index) => formatTime(index * CHUNK_SECONDS)));
@@ -457,13 +474,13 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
   // Télécharge le même contenu que le PDF au format Word (.docx), modifiable.
   async function handleWordDownload() {
-    if (!file) return;
+    const baseName = textMode || !file ? "texte" : file.name.replace(/\.[^.]+$/, "");
     setWordError("");
     try {
       // La bibliothèque Word n'est chargée qu'au moment du clic, pour garder la page légère.
       const { buildWordFile } = await import("@/lib/word");
       const blob = await buildWordFile({
-        fileName: file.name,
+        fileName: textMode || !file ? "Texte collé" : file.name,
         sections: parts
           .map((text, index) => ({
             time: pdfMode && text.includes("— Page") ? "" : (sectionLabels[index] ?? ""),
@@ -474,7 +491,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `${file.name.replace(/\.[^.]+$/, "")} - transcription.docx`;
+      link.download = `${baseName} - ${vocalizeOnly ? "harakat" : "transcription"}.docx`;
       link.click();
       URL.revokeObjectURL(link.href);
     } catch (error) {
@@ -529,24 +546,61 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   return (
     <div className="mt-8">
       <form onSubmit={handleTranscribe} className="no-print mx-auto max-w-3xl space-y-4">
-        <label className="block cursor-pointer rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-6 py-8 text-center hover:border-emerald-400">
-          <span dir="auto" className="block font-medium text-zinc-800">
-            {file ? file.name : "Choisir un fichier audio, vidéo ou PDF"}
-          </span>
-          <span className="mt-1 block text-sm text-zinc-500">
-            MP3, WAV, M4A, MP4, MOV… pour transcrire ; PDF pour ajouter les harakat à un texte
-          </span>
-          <input
-            type="file"
-            accept="audio/*,video/*,application/pdf,.pdf"
-            className="sr-only"
+        <div className="inline-flex rounded-lg border border-zinc-300 p-1">
+          {(
+            [
+              ["fichier", "Fichier (audio, vidéo, PDF)"],
+              ["texte", "Coller un texte"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setSource(value);
+                setStatus({ step: "idle" });
+              }}
+              className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+                source === value ? "bg-emerald-700 text-white" : "text-zinc-700 hover:bg-zinc-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {textMode ? (
+          <textarea
+            dir="rtl"
+            lang="ar"
+            value={pastedText}
+            onChange={(event) => setPastedText(event.target.value)}
             disabled={busy}
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
-              setStatus({ step: "idle" });
-            }}
+            placeholder="الصق النص العربي هنا… (collez ici votre texte arabe)"
+            rows={10}
+            className="font-arabic block w-full rounded-xl border-2 border-zinc-300 bg-zinc-50 px-4 py-3 text-2xl leading-[2] focus:border-emerald-500 focus:outline-none"
           />
-        </label>
+        ) : (
+          <label className="block cursor-pointer rounded-xl border-2 border-dashed border-zinc-300 bg-zinc-50 px-6 py-8 text-center hover:border-emerald-400">
+            <span dir="auto" className="block font-medium text-zinc-800">
+              {file ? file.name : "Choisir un fichier audio, vidéo ou PDF"}
+            </span>
+            <span className="mt-1 block text-sm text-zinc-500">
+              MP3, WAV, M4A, MP4, MOV… pour transcrire ; PDF pour ajouter les harakat à un texte
+            </span>
+            <input
+              type="file"
+              accept="audio/*,video/*,application/pdf,.pdf"
+              className="sr-only"
+              disabled={busy}
+              onChange={(event) => {
+                setFile(event.target.files?.[0] ?? null);
+                setStatus({ step: "idle" });
+              }}
+            />
+          </label>
+        )}
 
         {showPlayer && !sideBySide && renderPlayer(true)}
 
@@ -587,10 +641,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
         <button
           type="submit"
-          disabled={!file || busy}
+          disabled={!canStart || busy}
           className="w-full rounded-xl bg-emerald-700 px-6 py-3 font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
         >
-          {pdfMode ? "Ajouter les harakat" : "Transcrire"}
+          {vocalizeOnly ? "Ajouter les harakat" : "Transcrire"}
         </button>
       </form>
 
@@ -622,9 +676,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                 {status.waiting === "surcharge" &&
                   `Google est momentanément surchargé : nouvel essai dans ${RETRY_SECONDS} secondes…`}
                 {status.waiting === null &&
-                  (pdfMode
-                    ? `Lecture du PDF… ${sectionLabels[status.part - 1] ?? ""} (partie ${status.part} sur ${status.total})`
-                    : `Transcription en cours… partie ${status.part} sur ${status.total}`)}
+                  (textMode
+                    ? `Ajout des harakat… partie ${status.part} sur ${status.total}`
+                    : pdfMode
+                      ? `Lecture du PDF… ${sectionLabels[status.part - 1] ?? ""} (partie ${status.part} sur ${status.total})`
+                      : `Transcription en cours… partie ${status.part} sur ${status.total}`)}
                 {status.waiting !== null && version === "normale" && (
                   <button
                     type="button"
@@ -669,9 +725,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           {transcript && (
             <div id="document" className="mt-8">
               <h2 className="text-xl font-semibold text-zinc-900">
-                {pdfMode ? "Texte avec harakat" : "Transcription"}
+                {vocalizeOnly ? "Texte avec harakat" : "Transcription"}
               </h2>
-              {file && (
+              {file && !textMode && (
                 <p className="mt-1 text-sm text-zinc-500">
                   <bdi>{file.name}</bdi>
                 </p>
@@ -736,8 +792,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                 {parts.map((text, index) =>
                   text.trim() === "" ? null : (
                     <div key={index}>
-                      {pdfMode ? (
-                        // Inutile si Google a déjà indiqué chaque page (« — Page 4 — ») dans le texte.
+                      {vocalizeOnly ? (
+                        // Inutile s'il n'y a qu'une partie, ou si Google a déjà indiqué chaque page.
+                        sectionLabels[index] &&
                         !text.includes("— Page") && (
                           <span className="mb-2 inline-block rounded-md bg-zinc-100 px-2 py-0.5 text-sm text-zinc-700">
                             {sectionLabels[index]}
