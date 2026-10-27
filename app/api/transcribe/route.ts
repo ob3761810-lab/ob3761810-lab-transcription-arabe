@@ -12,8 +12,8 @@ export async function POST(request: Request) {
     if (audio.byteLength === 0) {
       return NextResponse.json({ error: "Extrait audio vide." }, { status: 400 });
     }
-    const text = await transcribeWithHarakat(audio);
-    return NextResponse.json({ text });
+    const { text, lite } = await transcribeWithHarakat(audio);
+    return NextResponse.json({ text, lite });
   } catch (error) {
     if (error instanceof RateLimitError) {
       // Limite gratuite atteinte : le navigateur attend un peu puis réessaie.

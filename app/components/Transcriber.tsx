@@ -51,6 +51,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [status, setStatus] = useState<Status>({ step: "idle" });
   // Texte de chaque partie de 2 minutes (la partie n commence à n × 2 minutes).
   const [parts, setParts] = useState<string[]>([]);
+  // Pour chaque partie : vrai si elle a été transcrite par le modèle de secours (plus léger).
+  const [liteParts, setLiteParts] = useState<boolean[]>([]);
   const [translation, setTranslation] = useState<{ label: string; text: string } | null>(null);
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState("");
@@ -89,10 +91,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
   // Transcrit un extrait. Si Google est saturé (limite gratuite ou surcharge),
   // on attend un peu puis on réessaie. En cas d'échec, l'erreur indique la cause.
-  async function transcribePart(chunk: Blob, part: number, total: number): Promise<string> {
+  async function transcribePart(
+    chunk: Blob,
+    part: number,
+    total: number,
+  ): Promise<{ text: string; lite: boolean }> {
     for (let attempt = 0; ; attempt++) {
       const response = await fetch("/api/transcribe", { method: "POST", body: chunk });
-      if (response.ok) return (await response.json()).text;
+      if (response.ok) return response.json();
       const retryable = response.status === 429 || response.status === 503;
       if (!retryable || attempt === MAX_RETRIES) {
         throw new Error(response.status === 429 ? "limite" : "autre");
@@ -110,8 +116,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     try {
       for (let i = nextPart.current; i < total; i++) {
         setStatus({ step: "transcribing", part: i + 1, total, waiting: null });
-        const partText = await transcribePart(chunks.current[i], i + 1, total);
+        const { text: partText, lite } = await transcribePart(chunks.current[i], i + 1, total);
         setParts((previous) => [...previous.slice(0, i), partText]);
+        setLiteParts((previous) => [...previous.slice(0, i), lite]);
         nextPart.current = i + 1;
       }
       setStatus({ step: "done" });
@@ -133,6 +140,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     event.preventDefault();
     if (!file) return;
     setParts([]);
+    setLiteParts([]);
     setTranslation(null);
     setTranslationError("");
 
@@ -333,6 +341,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   >
                     ▶ {formatTime(index * CHUNK_SECONDS)}
                   </button>
+                  {liteParts[index] && (
+                    <span className="no-print ml-2 text-xs text-amber-700">
+                      Version légère (Google était saturé) : vérifiez bien les harakat.
+                    </span>
+                  )}
                   <Lines text={shown(text)} />
                 </div>
               ),
