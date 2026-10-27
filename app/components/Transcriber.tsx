@@ -41,6 +41,11 @@ function formatTime(seconds: number): string {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
 }
 
+// Enlève les harakat (voyelles et signes de vocalisation) d'un texte arabe.
+function removeHarakat(text: string): string {
+  return text.replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "");
+}
+
 function Lines({ text }: { text: string }) {
   return (
     <div className="space-y-2">
@@ -70,6 +75,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [translation, setTranslation] = useState<{ label: string; text: string } | null>(null);
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState("");
+  // Choix d'affichage : avec ou sans harakat (le PDF suit ce choix).
+  const [withHarakat, setWithHarakat] = useState(true);
+  const shown = (text: string) => (withHarakat ? text : removeHarakat(text));
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
   const chunks = useRef<Blob[]>([]);
   const nextPart = useRef(0);
@@ -292,6 +300,22 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           <p className="mt-1 text-sm text-amber-700">
             Texte non relu : il peut contenir des erreurs de transcription ou de harakat.
           </p>
+          <div className="no-print mt-4 inline-flex rounded-lg border border-zinc-300 p-1">
+            {[true, false].map((value) => (
+              <button
+                key={String(value)}
+                type="button"
+                onClick={() => setWithHarakat(value)}
+                className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+                  withHarakat === value
+                    ? "bg-emerald-700 text-white"
+                    : "text-zinc-700 hover:bg-zinc-100"
+                }`}
+              >
+                {value ? "Avec harakat" : "Sans harakat"}
+              </button>
+            ))}
+          </div>
           <div className="mt-4 space-y-6 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
             {parts.map((text, index) =>
               text.trim() === "" ? null : (
@@ -304,7 +328,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   >
                     ▶ {formatTime(index * CHUNK_SECONDS)}
                   </button>
-                  <Lines text={text} />
+                  <Lines text={shown(text)} />
                 </div>
               ),
             )}
@@ -316,7 +340,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                 Traduction ({translation.label})
               </h2>
               <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
-                <Lines text={translation.text} />
+                <Lines text={shown(translation.text)} />
               </div>
             </section>
           )}
