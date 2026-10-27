@@ -4,7 +4,7 @@
 // le traduire, puis le télécharger en PDF.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { splitIntoWavChunks } from "@/lib/audio";
+import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
 
 type Status =
   | { step: "idle" }
@@ -28,6 +28,14 @@ const wait = (seconds: number) => new Promise((resolve) => setTimeout(resolve, s
 function isArabic(line: string): boolean {
   const firstLetter = line.match(/[A-Za-zÀ-ÿ؀-ۿ]/)?.[0] ?? "";
   return /[؀-ۿ]/.test(firstLetter);
+}
+
+// Affiche un minutage : 0:00, 2:00… ou 1:02:00 au-delà d'une heure.
+function formatTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = String(Math.floor(seconds % 60)).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
 }
 
 function Lines({ text }: { text: string }) {
@@ -54,13 +62,18 @@ function Lines({ text }: { text: string }) {
 export default function Transcriber({ ready }: { ready: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>({ step: "idle" });
-  const [transcript, setTranscript] = useState("");
+  // Texte de chaque partie de 2 minutes (la partie n commence à n × 2 minutes).
+  const [parts, setParts] = useState<string[]>([]);
   const [translation, setTranslation] = useState<{ label: string; text: string } | null>(null);
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState("");
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
   const chunks = useRef<Blob[]>([]);
   const nextPart = useRef(0);
+  // Lecteur audio ou vidéo, pour y aller au minutage cliqué.
+  const player = useRef<HTMLMediaElement | null>(null);
+
+  const transcript = parts.filter((text) => text.trim() !== "").join("\n");
 
   const busy = status.step === "preparing" || status.step === "transcribing";
 
@@ -99,16 +112,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     }
   }
 
-  // Transcrit les extraits à partir de `nextPart`, à la suite du texte déjà obtenu.
-  async function transcribeRemainingParts(startText: string) {
-    let text = startText;
+  // Transcrit les extraits à partir de `nextPart`, à la suite des parties déjà obtenues.
+  async function transcribeRemainingParts() {
     const total = chunks.current.length;
     try {
       for (let i = nextPart.current; i < total; i++) {
         setStatus({ step: "transcribing", part: i + 1, total, waiting: false });
         const partText = await transcribePart(chunks.current[i], i + 1, total);
-        text = text && partText ? `${text}\n${partText}` : text || partText;
-        setTranscript(text);
+        setParts((previous) => [...previous.slice(0, i), partText]);
         nextPart.current = i + 1;
       }
       setStatus({ step: "done" });
@@ -129,7 +140,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   async function handleTranscribe(event: React.FormEvent) {
     event.preventDefault();
     if (!file) return;
-    setTranscript("");
+    setParts([]);
     setTranslation(null);
     setTranslationError("");
 
@@ -148,7 +159,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       return;
     }
 
-    await transcribeRemainingParts("");
+    await transcribeRemainingParts();
+  }
+
+  // Place le lecteur au début de la partie cliquée et lance la lecture.
+  function playFrom(seconds: number) {
+    if (!player.current) return;
+    player.current.currentTime = seconds;
+    player.current.play().catch(() => {});
   }
 
   async function handleTranslate(code: string, label: string) {
@@ -208,9 +226,23 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       {mediaUrl && (
         <div className="no-print sticky top-0 z-10 -mx-2 mt-6 bg-white px-2 py-2">
           {isVideo ? (
-            <video src={mediaUrl} controls className="max-h-64 w-full rounded-xl bg-black" />
+            <video
+              ref={(element) => {
+                player.current = element;
+              }}
+              src={mediaUrl}
+              controls
+              className="max-h-64 w-full rounded-xl bg-black"
+            />
           ) : (
-            <audio src={mediaUrl} controls className="w-full" />
+            <audio
+              ref={(element) => {
+                player.current = element;
+              }}
+              src={mediaUrl}
+              controls
+              className="w-full"
+            />
           )}
         </div>
       )}
@@ -232,7 +264,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
             {status.canResume && (
               <button
                 type="button"
-                onClick={() => transcribeRemainingParts(transcript)}
+                onClick={() => transcribeRemainingParts()}
                 className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800"
               >
                 Reprendre
@@ -253,8 +285,22 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           <p className="mt-1 text-sm text-amber-700">
             Texte non relu : il peut contenir des erreurs de transcription ou de harakat.
           </p>
-          <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
-            <Lines text={transcript} />
+          <div className="mt-4 space-y-6 rounded-xl border border-zinc-200 bg-white p-6 text-zinc-900">
+            {parts.map((text, index) =>
+              text.trim() === "" ? null : (
+                <div key={index}>
+                  <button
+                    type="button"
+                    onClick={() => playFrom(index * CHUNK_SECONDS)}
+                    title="Écouter à partir de ce moment"
+                    className="mb-2 rounded-md bg-emerald-50 px-2 py-0.5 font-mono text-sm text-emerald-800 hover:bg-emerald-100"
+                  >
+                    ▶ {formatTime(index * CHUNK_SECONDS)}
+                  </button>
+                  <Lines text={text} />
+                </div>
+              ),
+            )}
           </div>
 
           {translation && (

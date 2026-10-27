@@ -4,7 +4,7 @@
 // Chaque extrait reste sous la limite de 4,5 Mo acceptée par Vercel.
 
 const SAMPLE_RATE = 16000;
-const CHUNK_SECONDS = 120;
+export const CHUNK_SECONDS = 120;
 
 export async function splitIntoWavChunks(file: File): Promise<Blob[]> {
   const fileData = await file.arrayBuffer();
