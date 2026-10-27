@@ -12,7 +12,8 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
 4. Je peux traduire le texte (français, anglais, arabe).
 5. Je peux télécharger le texte en PDF ou en Word (modifiable).
 6. Je peux écouter ou regarder le fichier dans la page, avec un minutage cliquable toutes les 2 minutes.
-   Sur ordinateur : texte à gauche, lecteur à droite (toujours visible) ; sur téléphone : lecteur au-dessus.
+   Avant la transcription : lecteur juste sous la zone de dépôt. Ensuite, sur ordinateur : texte à gauche,
+   lecteur à droite (toujours visible) ; sur téléphone : lecteur au-dessus. La lecture continue au déplacement.
 7. Les mots à vérifier sont en rouge : ceux dont l'IA doute pendant la transcription, et ceux repérés par
    une relecture automatique du texte (orthographe, harakat, accord), avec une correction proposée.
    Un clic ouvre une fenêtre : choisir un mot dans la liste proposée, écrire sa propre correction, ou confirmer.

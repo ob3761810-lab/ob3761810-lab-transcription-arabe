@@ -3,7 +3,7 @@
 // Toute l'application : choisir un fichier, obtenir le texte avec les harakat,
 // le traduire, puis le télécharger en PDF.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
 import { isPdf, PageTooLargeError, splitPdf } from "@/lib/pdf";
 import type { Issue, Version } from "@/lib/gemini";
@@ -138,6 +138,23 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const nextPart = useRef(0);
   // Lecteur audio ou vidéo, pour y aller au minutage cliqué.
   const player = useRef<HTMLMediaElement | null>(null);
+  // Position de lecture gardée quand le lecteur change de place (sous la zone de dépôt → à droite).
+  const playback = useRef<{ time: number; playing: boolean } | null>(null);
+  // Branche le lecteur : s'il vient de changer de place, il reprend au même moment.
+  const attachPlayer = useCallback((element: HTMLMediaElement | null) => {
+    if (element) {
+      player.current = element;
+      const saved = playback.current;
+      if (saved) {
+        element.currentTime = saved.time;
+        if (saved.playing) element.play().catch(() => {});
+        playback.current = null;
+      }
+    } else if (player.current) {
+      playback.current = { time: player.current.currentTime, playing: !player.current.paused };
+      player.current = null;
+    }
+  }, []);
 
   const transcript = parts.filter((text) => text.trim() !== "").join("\n");
   const doubtCount = countDoubts(transcript);
@@ -493,6 +510,22 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     }
   }
 
+  // Lecteur audio ou vidéo du fichier choisi. Quand il change de place, il reprend
+  // au même moment (et continue de jouer s'il était en lecture).
+  // `compact` : plus petit sous la zone de dépôt, pour garder le bouton « Transcrire » visible.
+  function renderPlayer(compact = false) {
+    return isVideo ? (
+      <video
+        ref={attachPlayer}
+        src={mediaUrl ?? undefined}
+        controls
+        className={`w-full rounded-xl bg-black ${compact ? "max-h-72" : "max-h-64 lg:max-h-[75vh]"}`}
+      />
+    ) : (
+      <audio ref={attachPlayer} src={mediaUrl ?? undefined} controls className="w-full" />
+    );
+  }
+
   return (
     <div className="mt-8">
       <form onSubmit={handleTranscribe} className="no-print mx-auto max-w-3xl space-y-4">
@@ -514,6 +547,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
             }}
           />
         </label>
+
+        {showPlayer && !sideBySide && renderPlayer(true)}
 
         <fieldset className="rounded-xl border border-zinc-200 px-4 py-3">
           <legend className="px-1 text-sm font-medium text-zinc-700">Version</legend>
@@ -559,37 +594,19 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         </button>
       </form>
 
-      {/* Avant le texte : lecteur en haut, sous le bouton.
+      {/* Avant le texte : lecteur sous la zone de dépôt (dans le formulaire ci-dessus).
           Avec le texte, sur ordinateur : texte à gauche, lecteur à droite (toujours visible).
           Sur téléphone : lecteur au-dessus du texte. */}
       <div
         className={
           sideBySide
             ? "mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start lg:gap-8 print:block"
-            : `mx-auto max-w-3xl ${showPlayer ? "mt-6" : ""}`
+            : "mx-auto max-w-3xl"
         }
       >
-        {showPlayer && (
+        {sideBySide && (
           <div className="no-print sticky top-0 z-10 -mx-2 bg-white px-2 py-2 lg:order-2 lg:top-4 lg:mx-0 lg:px-0">
-            {isVideo ? (
-              <video
-                ref={(element) => {
-                  player.current = element;
-                }}
-                src={mediaUrl}
-                controls
-                className="max-h-64 w-full rounded-xl bg-black lg:max-h-[75vh]"
-              />
-            ) : (
-              <audio
-                ref={(element) => {
-                  player.current = element;
-                }}
-                src={mediaUrl}
-                controls
-                className="w-full"
-              />
-            )}
+            {renderPlayer()}
           </div>
         )}
 
