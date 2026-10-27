@@ -11,8 +11,9 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
 4. Je peux traduire le texte (français, anglais, arabe).
 5. Je peux télécharger le texte en PDF ou en Word (modifiable).
 6. Je peux écouter ou regarder le fichier dans la page, avec un minutage cliquable toutes les 2 minutes.
-7. Les mots dont l'IA n'est pas sûre (orthographe ou harakat) sont en rouge ; un clic permet de les corriger
-   ou de les confirmer. Non vérifiés, ils restent en rouge dans le PDF et le Word.
+7. Les mots à vérifier sont en rouge : ceux dont l'IA doute pendant la transcription, et ceux repérés par
+   une relecture automatique du texte (orthographe, harakat, accord), avec une correction proposée.
+   Un clic permet de les corriger ou de les confirmer. Non vérifiés, ils restent en rouge dans le PDF et le Word.
 
 Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Facebook, TikTok) pour le redonner à l'utilisateur.
 

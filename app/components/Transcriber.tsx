@@ -5,11 +5,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
+import type { Issue } from "@/lib/gemini";
 import {
   countDoubts,
   doubtAt,
   formatTime,
   isArabic,
+  markWord,
   removeDoubtMarks,
   removeHarakat,
   resolveDoubt,
@@ -37,6 +39,25 @@ const RETRY_SECONDS = 30;
 const MAX_RETRIES = 4;
 
 const wait = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+
+// Phrase en français contenant des mots arabes : chaque passage arabe est isolé
+// pour s'afficher dans le bon ordre.
+function MixedText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/([\u0600-\u06FF][\u0600-\u06FF\s]*[\u0600-\u06FF]|[\u0600-\u06FF])/).map(
+        (piece, index) =>
+          index % 2 === 1 ? (
+            <bdi key={index} dir="rtl" className="font-arabic">
+              {piece}
+            </bdi>
+          ) : (
+            piece
+          ),
+      )}
+    </>
+  );
+}
 
 // Affiche un texte ligne par ligne. Les mots douteux (en rouge) sont dessinés par
 // `renderDoubt`, qui reçoit leur numéro dans le texte (0, 1, 2…) et le mot.
@@ -86,6 +107,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [withHarakat, setWithHarakat] = useState(true);
   const shown = (text: string) => (withHarakat ? text : removeHarakat(text));
   const [wordError, setWordError] = useState("");
+  // Relecture : corrections proposées pour chaque mot repéré, et état de la relecture.
+  const [suggestions, setSuggestions] = useState<Record<string, Issue>>({});
+  const [check, setCheck] = useState<{ step: "idle" | "checking" | "done" | "error"; message?: string }>(
+    { step: "idle" },
+  );
   // Mot douteux en cours de correction : partie, numéro du mot dans la partie, texte saisi.
   const [editing, setEditing] = useState<{ part: number; n: number; value: string } | null>(
     null,
@@ -144,15 +170,19 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   // Transcrit les extraits à partir de `nextPart`, à la suite des parties déjà obtenues.
   async function transcribeRemainingParts() {
     const total = chunks.current.length;
+    // Copie locale des parties, pour lancer la relecture sur le texte complet à la fin.
+    const collected = parts.slice(0, nextPart.current);
     try {
       for (let i = nextPart.current; i < total; i++) {
         setStatus({ step: "transcribing", part: i + 1, total, waiting: null });
         const { text: partText, lite } = await transcribePart(chunks.current[i], i + 1, total);
+        collected[i] = partText;
         setParts((previous) => [...previous.slice(0, i), partText]);
         setLiteParts((previous) => [...previous.slice(0, i), lite]);
         nextPart.current = i + 1;
       }
       setStatus({ step: "done" });
+      await proofread(collected);
     } catch (error) {
       console.error(error);
       const done = `${nextPart.current} partie(s) sur ${total} transcrite(s).`;
@@ -173,6 +203,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     setParts([]);
     setLiteParts([]);
     setEditing(null);
+    setSuggestions({});
+    setCheck({ step: "idle" });
     setTranslation(null);
     setTranslationError("");
 
@@ -201,6 +233,37 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     player.current.play().catch(() => {});
   }
 
+  // Relecture du texte complet : les mots probablement faux passent en rouge,
+  // avec une correction proposée.
+  async function proofread(texts: string[]) {
+    setCheck({ step: "checking" });
+    try {
+      const plain = removeDoubtMarks(texts.filter((text) => text.trim() !== "").join("\n"));
+      const response = await fetch("/api/check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: plain }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setCheck({ step: "error", message: data.error });
+        return;
+      }
+      const issues: Issue[] = data.issues;
+      setSuggestions((previous) => ({
+        ...previous,
+        ...Object.fromEntries(issues.map((issue) => [issue.word, issue])),
+      }));
+      setParts((previous) =>
+        previous.map((text) => issues.reduce((marked, issue) => markWord(marked, issue.word), text)),
+      );
+      setCheck({ step: "done" });
+    } catch (error) {
+      console.error(error);
+      setCheck({ step: "error", message: "La relecture n'a pas pu être réalisée. Réessayez dans un instant." });
+    }
+  }
+
   // Remplace le mot douteux en cours de correction : il n'est plus en rouge.
   function confirmWord(word: string) {
     if (!editing || word.trim() === "") return;
@@ -216,8 +279,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     return function DoubtfulWord(n: number, word: string) {
       if (editing?.part === part && editing.n === n) {
         const original = doubtAt(parts[part], n);
+        const reason = suggestions[original]?.reason;
         return (
           <span className="no-print inline-flex flex-wrap items-center gap-1 align-middle font-sans text-base">
+            {reason && (
+              <span dir="ltr" className="block w-full text-left text-sm text-zinc-600">
+                Correction proposée : <MixedText text={reason} />
+              </span>
+            )}
             <input
               dir="auto"
               autoFocus
@@ -258,7 +327,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         <button
           type="button"
           title="Mot à vérifier : cliquez pour le corriger"
-          onClick={() => setEditing({ part, n, value: doubtAt(parts[part], n) })}
+          onClick={() => {
+            const original = doubtAt(parts[part], n);
+            setEditing({ part, n, value: suggestions[original]?.suggestion || original });
+          }}
           className="text-red-600 underline decoration-dotted underline-offset-4 hover:bg-red-50"
         >
           {word}
@@ -411,6 +483,28 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           <p className="mt-1 text-sm text-amber-700">
             Texte non relu : il peut contenir des erreurs de transcription ou de harakat.
           </p>
+          {check.step === "checking" && (
+            <p className="no-print mt-3 text-sm text-zinc-700">
+              Relecture de l&apos;orthographe et des harakat en cours…
+            </p>
+          )}
+          {check.step === "done" && doubtCount === 0 && (
+            <p className="no-print mt-3 text-sm text-emerald-700">
+              Relecture terminée : aucun mot signalé (une relecture humaine reste conseillée).
+            </p>
+          )}
+          {check.step === "error" && (
+            <div className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+              {check.message}{" "}
+              <button
+                type="button"
+                onClick={() => proofread(parts)}
+                className="ml-1 font-medium underline"
+              >
+                Relancer la relecture
+              </button>
+            </div>
+          )}
           {doubtCount > 0 && (
             <p className="hidden text-sm text-red-600 print:block">
               En rouge : mots dont l&apos;orthographe ou les harakat sont à vérifier.
@@ -419,8 +513,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           {doubtCount > 0 && (
             <p className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
               {doubtCount === 1
-                ? "1 mot dont Google n'est pas sûr est en rouge"
-                : `${doubtCount} mots dont Google n'est pas sûr sont en rouge`}{" "}
+                ? "1 mot à vérifier est en rouge"
+                : `${doubtCount} mots à vérifier sont en rouge`}{" "}
               : cliquez dessus pour les corriger ou les confirmer. Ils restent en rouge dans le PDF et
               le Word tant qu&apos;ils ne sont pas vérifiés.
             </p>

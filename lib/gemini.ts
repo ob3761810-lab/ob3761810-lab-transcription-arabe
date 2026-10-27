@@ -13,7 +13,8 @@ export class BusyError extends Error {}
 
 type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-async function callModel(model: string, parts: GeminiPart[]): Promise<string> {
+// `json` : demande à Google une réponse au format JSON (pour la relecture).
+async function callModel(model: string, parts: GeminiPart[], json = false): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY manquante dans les variables d'environnement");
@@ -26,7 +27,10 @@ async function callModel(model: string, parts: GeminiPart[]): Promise<string> {
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
-        generationConfig: { temperature: 0 },
+        generationConfig: {
+          temperature: 0,
+          ...(json ? { responseMimeType: "application/json" } : {}),
+        },
       }),
     },
   );
@@ -51,13 +55,16 @@ async function callModel(model: string, parts: GeminiPart[]): Promise<string> {
 
 // Essaie le modèle principal, puis le modèle de secours s'il est saturé.
 // `lite` indique que la réponse vient du modèle de secours.
-async function askGemini(parts: GeminiPart[]): Promise<{ text: string; lite: boolean }> {
+async function askGemini(
+  parts: GeminiPart[],
+  json = false,
+): Promise<{ text: string; lite: boolean }> {
   try {
-    return { text: await callModel(MODEL, parts), lite: false };
+    return { text: await callModel(MODEL, parts, json), lite: false };
   } catch (error) {
     if (!(error instanceof RateLimitError || error instanceof BusyError)) throw error;
     console.error(`Modèle ${MODEL} saturé, passage à ${FALLBACK_MODEL} :`, error);
-    return { text: await callModel(FALLBACK_MODEL, parts), lite: true };
+    return { text: await callModel(FALLBACK_MODEL, parts, json), lite: true };
   }
 }
 
@@ -102,4 +109,38 @@ ${text}`,
     },
   ]);
   return translation;
+}
+
+// Un mot probablement faux repéré par la relecture.
+export type Issue = { word: string; suggestion: string; reason: string };
+
+const CHECK_RULES = `You are proofreading a transcription of a religious lesson. Arabic words carry full harakat.
+Find Arabic words that are probably wrong: spelling mistakes (for example ta marbuta ة written as ha ه,
+wrong hamza), harakat that contradict the grammar (i'rab), and agreement mistakes (for example a singular
+pronoun referring to a plural). Use the context of the sentence.
+Answer with a JSON array, at most 60 items, each item being:
+{"word": the wrong word copied exactly as it appears in the text, with its harakat,
+ "suggestion": the corrected word with full harakat,
+ "reason": a very short explanation in French}
+List only words that are really probably wrong. If everything is correct, answer [].
+Never add a verse number, a hadith reference or a scholar's name.
+
+Text:
+`;
+
+// Relit le texte et renvoie les mots probablement faux, avec une correction proposée.
+export async function checkText(text: string): Promise<Issue[]> {
+  const { text: answer } = await askGemini([{ text: CHECK_RULES + text }], true);
+  const cleaned = answer.replace(/^```(?:json)?\s*|\s*```$/g, "");
+  const parsed: unknown = JSON.parse(cleaned);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter(
+      (item): item is Issue =>
+        typeof item?.word === "string" &&
+        item.word.trim() !== "" &&
+        typeof item.suggestion === "string" &&
+        typeof item.reason === "string",
+    )
+    .map((item) => ({ word: item.word.trim(), suggestion: item.suggestion.trim(), reason: item.reason }));
 }

@@ -63,3 +63,10 @@ export function countDoubts(text: string): number {
 export function removeDoubtMarks(text: string): string {
   return text.replace(/[⟦⟧]/g, "");
 }
+
+// Met en rouge (entoure de ⟦ ⟧) chaque apparition exacte de `word` qui n'est pas déjà signalée.
+export function markWord(text: string, word: string): string {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alone = new RegExp(`(?<![\\p{L}\\p{M}⟦])${escaped}(?![\\p{L}\\p{M}⟧])`, "gu");
+  return text.replace(alone, `⟦${word}⟧`);
+}
