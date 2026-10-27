@@ -8,14 +8,15 @@ import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
 import type { Issue } from "@/lib/gemini";
 import {
   countDoubts,
-  doubtAt,
+  fixMark,
   formatTime,
   isArabic,
+  markAt,
   markWord,
-  removeDoubtMarks,
+  removeFixedMarks,
   removeHarakat,
-  resolveDoubt,
-  splitDoubts,
+  removeMarks,
+  splitMarks,
   toLines,
 } from "@/lib/text";
 
@@ -59,24 +60,25 @@ function MixedText({ text }: { text: string }) {
   );
 }
 
-// Affiche un texte ligne par ligne. Les mots douteux (en rouge) sont dessinés par
-// `renderDoubt`, qui reçoit leur numéro dans le texte (0, 1, 2…) et le mot.
+// Affiche un texte ligne par ligne. Les mots marqués (à vérifier ou corrigés) sont dessinés
+// par `renderMark`, qui reçoit leur numéro dans le texte (0, 1, 2…), le mot et son type.
 function Lines({
   text,
-  renderDoubt = (_, word) => <span className="text-red-600">{word}</span>,
+  renderMark = (_, word, kind) =>
+    kind === "doubt" ? <span className="text-red-600">{word}</span> : word,
 }: {
   text: string;
-  renderDoubt?: (n: number, word: string) => React.ReactNode;
+  renderMark?: (n: number, word: string, kind: "doubt" | "fixed") => React.ReactNode;
 }) {
-  let doubtNumber = 0;
+  let markNumber = 0;
   return (
     <div className="space-y-2">
       {toLines(text).map((line, index) => {
-        const content = splitDoubts(line).map((segment, i) =>
-          segment.doubtful ? (
-            <span key={i}>{renderDoubt(doubtNumber++, segment.text)}</span>
-          ) : (
+        const content = splitMarks(line).map((segment, i) =>
+          segment.kind === "normal" ? (
             segment.text
+          ) : (
+            <span key={i}>{renderMark(markNumber++, segment.text, segment.kind)}</span>
           ),
         );
         return isArabic(line) ? (
@@ -109,9 +111,12 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [wordError, setWordError] = useState("");
   // Relecture : corrections proposées pour chaque mot repéré, et état de la relecture.
   const [suggestions, setSuggestions] = useState<Record<string, Issue>>({});
-  const [check, setCheck] = useState<{ step: "idle" | "checking" | "done" | "error"; message?: string }>(
-    { step: "idle" },
-  );
+  // `found` : nombre de mots signalés par la relecture.
+  const [check, setCheck] = useState<{
+    step: "idle" | "checking" | "done" | "error";
+    message?: string;
+    found?: number;
+  }>({ step: "idle" });
   // Mot douteux en cours de correction : partie, numéro du mot dans la partie, texte saisi.
   const [editing, setEditing] = useState<{ part: number; n: number; value: string } | null>(
     null,
@@ -238,7 +243,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   async function proofread(texts: string[]) {
     setCheck({ step: "checking" });
     try {
-      const plain = removeDoubtMarks(texts.filter((text) => text.trim() !== "").join("\n"));
+      // Les mots déjà signalés pendant la transcription sont envoyés avec leurs marques ⟦ ⟧,
+      // pour recevoir eux aussi des propositions de correction.
+      const plain = removeFixedMarks(texts.filter((text) => text.trim() !== "").join("\n"));
       const response = await fetch("/api/check", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -257,81 +264,123 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       setParts((previous) =>
         previous.map((text) => issues.reduce((marked, issue) => markWord(marked, issue.word), text)),
       );
-      setCheck({ step: "done" });
+      setCheck({ step: "done", found: issues.length });
     } catch (error) {
       console.error(error);
       setCheck({ step: "error", message: "La relecture n'a pas pu être réalisée. Réessayez dans un instant." });
     }
   }
 
-  // Remplace le mot douteux en cours de correction : il n'est plus en rouge.
+  // Remplace le mot en cours de correction. Il devient « corrigé » : souligné en vert,
+  // et toujours modifiable (avec le mot d'origine proposé dans la liste).
   function confirmWord(word: string) {
     if (!editing || word.trim() === "") return;
     const { part, n } = editing;
+    const current = markAt(parts[part], n);
+    const chosen = word.trim();
+    setSuggestions((previous) => {
+      const known = previous[current];
+      const choices = [...new Set([...(known?.suggestions ?? []), current])];
+      return {
+        ...previous,
+        [chosen]: {
+          word: chosen,
+          suggestions: choices.filter((choice) => choice !== chosen),
+          reason: known?.reason ?? "",
+        },
+      };
+    });
     setParts((previous) =>
-      previous.map((text, index) => (index === part ? resolveDoubt(text, n, word.trim()) : text)),
+      previous.map((text, index) => (index === part ? fixMark(text, n, chosen) : text)),
     );
     setEditing(null);
   }
 
-  // Mot douteux : en rouge et cliquable, ou case de correction s'il est en cours de correction.
-  function renderDoubt(part: number) {
-    return function DoubtfulWord(n: number, word: string) {
+  // Mot marqué : en rouge (à vérifier) ou souligné en vert (corrigé), cliquable ;
+  // ou fenêtre de correction s'il est en cours de correction.
+  function renderMark(part: number) {
+    return function MarkedWord(n: number, word: string, kind: "doubt" | "fixed") {
+      const current = markAt(parts[part], n);
+      const known = suggestions[current];
       if (editing?.part === part && editing.n === n) {
-        const original = doubtAt(parts[part], n);
-        const reason = suggestions[original]?.reason;
         return (
-          <span className="no-print inline-flex flex-wrap items-center gap-1 align-middle font-sans text-base">
-            {reason && (
-              <span dir="ltr" className="block w-full text-left text-sm text-zinc-600">
-                Correction proposée : <MixedText text={reason} />
+          <span className="no-print my-1 inline-flex max-w-full flex-col gap-2 rounded-lg border border-zinc-300 bg-white p-3 align-middle font-sans text-base shadow-sm">
+            {known?.reason && (
+              <span dir="ltr" className="text-left text-sm text-zinc-600">
+                <MixedText text={known.reason} />
               </span>
             )}
-            <input
-              dir="auto"
-              autoFocus
-              value={editing.value}
-              onChange={(event) => setEditing({ ...editing, value: event.target.value })}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") confirmWord(editing.value);
-                if (event.key === "Escape") setEditing(null);
-              }}
-              className="font-arabic w-40 rounded border border-red-400 px-2 py-0.5 text-xl"
-            />
-            <button
-              type="button"
-              onClick={() => confirmWord(editing.value)}
-              className="rounded bg-emerald-700 px-2 py-0.5 text-white"
-            >
-              Corriger
-            </button>
-            <button
-              type="button"
-              onClick={() => confirmWord(original)}
-              className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-zinc-700"
-            >
-              C&apos;est juste
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditing(null)}
-              title="Annuler"
-              className="px-1 text-zinc-500"
-            >
-              ✕
-            </button>
+            {known && known.suggestions.length > 0 && (
+              <span dir="ltr" className="flex flex-wrap items-center gap-2 text-left text-sm">
+                <span className="text-zinc-600">Mots proposés :</span>
+                {known.suggestions.map((choice) => (
+                  <button
+                    key={choice}
+                    type="button"
+                    onClick={() => confirmWord(choice)}
+                    className="font-arabic rounded-lg border border-emerald-600 bg-emerald-50 px-3 py-1 text-xl text-emerald-900 hover:bg-emerald-100"
+                  >
+                    {choice}
+                  </button>
+                ))}
+              </span>
+            )}
+            <span dir="ltr" className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-zinc-600">
+                {known && known.suggestions.length > 0 ? "Ou écrivez :" : "Votre correction :"}
+              </span>
+              <input
+                dir="rtl"
+                autoFocus
+                value={editing.value}
+                onChange={(event) => setEditing({ ...editing, value: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") confirmWord(editing.value);
+                  if (event.key === "Escape") setEditing(null);
+                }}
+                className="font-arabic w-44 rounded border border-zinc-400 px-2 py-0.5 text-xl"
+              />
+              <button
+                type="button"
+                onClick={() => confirmWord(editing.value)}
+                className="rounded bg-emerald-700 px-3 py-1 text-white"
+              >
+                Corriger
+              </button>
+              {kind === "doubt" && (
+                <button
+                  type="button"
+                  onClick={() => confirmWord(current)}
+                  className="rounded border border-zinc-300 bg-white px-3 py-1 text-zinc-700"
+                >
+                  C&apos;est juste
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="px-2 py-1 text-zinc-500"
+              >
+                Annuler
+              </button>
+            </span>
           </span>
         );
       }
       return (
         <button
           type="button"
-          title="Mot à vérifier : cliquez pour le corriger"
-          onClick={() => {
-            const original = doubtAt(parts[part], n);
-            setEditing({ part, n, value: suggestions[original]?.suggestion || original });
-          }}
-          className="text-red-600 underline decoration-dotted underline-offset-4 hover:bg-red-50"
+          title={
+            kind === "doubt"
+              ? "Mot à vérifier : cliquez pour le corriger"
+              : "Mot corrigé : cliquez pour le modifier"
+          }
+          onClick={() => setEditing({ part, n, value: current })}
+          className={
+            kind === "doubt"
+              ? "text-red-600 underline decoration-dotted underline-offset-4 hover:bg-red-50"
+              : "underline decoration-emerald-500 decoration-dotted underline-offset-4 hover:bg-emerald-50 print:no-underline"
+          }
         >
           {word}
         </button>
@@ -371,14 +420,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: removeDoubtMarks(transcript), language: code }),
+        body: JSON.stringify({ text: removeMarks(transcript), language: code }),
       });
       const data = await response.json();
       if (!response.ok) {
         setTranslationError(data.error);
         return;
       }
-      setTranslation({ label, text: removeDoubtMarks(data.text) });
+      setTranslation({ label, text: removeMarks(data.text) });
     } catch (error) {
       console.error(error);
       setTranslationError("La traduction n'a pas pu être réalisée. Réessayez dans un instant.");
@@ -488,7 +537,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               Relecture de l&apos;orthographe et des harakat en cours…
             </p>
           )}
-          {check.step === "done" && doubtCount === 0 && (
+          {check.step === "done" && check.found === 0 && doubtCount === 0 && (
             <p className="no-print mt-3 text-sm text-emerald-700">
               Relecture terminée : aucun mot signalé (une relecture humaine reste conseillée).
             </p>
@@ -515,8 +564,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               {doubtCount === 1
                 ? "1 mot à vérifier est en rouge"
                 : `${doubtCount} mots à vérifier sont en rouge`}{" "}
-              : cliquez dessus pour les corriger ou les confirmer. Ils restent en rouge dans le PDF et
-              le Word tant qu&apos;ils ne sont pas vérifiés.
+              : cliquez dessus pour choisir un mot proposé ou écrire votre correction. Ils restent en
+              rouge dans le PDF et le Word tant qu&apos;ils ne sont pas vérifiés. Les mots corrigés sont
+              soulignés en vert : cliquez dessus pour les modifier à nouveau.
             </p>
           )}
           <div className="no-print mt-4 inline-flex rounded-lg border border-zinc-300 p-1">
@@ -552,7 +602,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                       Version légère (Google était saturé) : vérifiez bien les harakat.
                     </span>
                   )}
-                  <Lines text={shown(text)} renderDoubt={renderDoubt(index)} />
+                  <Lines text={shown(text)} renderMark={renderMark(index)} />
                 </div>
               ),
             )}

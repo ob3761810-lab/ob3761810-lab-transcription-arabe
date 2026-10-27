@@ -111,18 +111,19 @@ ${text}`,
   return translation;
 }
 
-// Un mot probablement faux repéré par la relecture.
-export type Issue = { word: string; suggestion: string; reason: string };
+// Un mot probablement faux repéré par la relecture, avec 1 à 4 corrections proposées.
+export type Issue = { word: string; suggestions: string[]; reason: string };
 
 const CHECK_RULES = `You are proofreading a transcription of a religious lesson. Arabic words carry full harakat.
 Find Arabic words that are probably wrong: spelling mistakes (for example ta marbuta ة written as ha ه,
 wrong hamza), harakat that contradict the grammar (i'rab), and agreement mistakes (for example a singular
 pronoun referring to a plural). Use the context of the sentence.
+Words written between ⟦ and ⟧ were already flagged as uncertain: always include each of them in the list.
 Answer with a JSON array, at most 60 items, each item being:
-{"word": the wrong word copied exactly as it appears in the text, with its harakat,
- "suggestion": the corrected word with full harakat,
+{"word": the word copied exactly as it appears in the text, with its harakat, without ⟦ ⟧,
+ "suggestions": an array of 1 to 4 possible corrected words with full harakat, the most likely first,
  "reason": a very short explanation in French}
-List only words that are really probably wrong. If everything is correct, answer [].
+List only words that are really probably wrong, plus the flagged ones. If everything is correct, answer [].
 Never add a verse number, a hadith reference or a scholar's name.
 
 Text:
@@ -139,8 +140,18 @@ export async function checkText(text: string): Promise<Issue[]> {
       (item): item is Issue =>
         typeof item?.word === "string" &&
         item.word.trim() !== "" &&
-        typeof item.suggestion === "string" &&
+        Array.isArray(item.suggestions) &&
         typeof item.reason === "string",
     )
-    .map((item) => ({ word: item.word.trim(), suggestion: item.suggestion.trim(), reason: item.reason }));
+    .map((item) => ({
+      word: item.word.replace(/[⟦⟧]/g, "").trim(),
+      suggestions: [
+        ...new Set(
+          item.suggestions
+            .filter((word): word is string => typeof word === "string" && word.trim() !== "")
+            .map((word) => word.trim()),
+        ),
+      ].slice(0, 4),
+      reason: item.reason,
+    }));
 }

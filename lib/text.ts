@@ -27,46 +27,58 @@ export function toLines(text: string): string[] {
   return text.split("\n").filter((line) => line.trim() !== "");
 }
 
-// Mots dont Google n'est pas sûr (orthographe ou harakat) : il les entoure de ⟦ ⟧.
-const DOUBT = /⟦([^⟦⟧]*)⟧/g;
+// Marques dans le texte :
+// ⟦mot⟧ = mot à vérifier (en rouge) ; ⟨mot⟩ = mot corrigé ou confirmé par l'utilisateur
+// (souligné en vert à l'écran, normal dans le PDF et le Word, et toujours modifiable).
+const MARK = /⟦([^⟦⟧⟨⟩]*)⟧|⟨([^⟦⟧⟨⟩]*)⟩/g;
+const DOUBT = /⟦[^⟦⟧⟨⟩]*⟧/g;
 
-export type Segment = { text: string; doubtful: boolean };
+export type Segment = { text: string; kind: "normal" | "doubt" | "fixed" };
 
-// Découpe une ligne en morceaux : texte normal et mots douteux.
-export function splitDoubts(line: string): Segment[] {
+// Découpe une ligne en morceaux : texte normal, mots à vérifier, mots corrigés.
+export function splitMarks(line: string): Segment[] {
   const segments: Segment[] = [];
   let last = 0;
-  for (const match of line.matchAll(DOUBT)) {
-    if (match.index > last) segments.push({ text: line.slice(last, match.index), doubtful: false });
-    segments.push({ text: match[1], doubtful: true });
+  for (const match of line.matchAll(MARK)) {
+    if (match.index > last) segments.push({ text: line.slice(last, match.index), kind: "normal" });
+    segments.push(
+      match[1] !== undefined ? { text: match[1], kind: "doubt" } : { text: match[2], kind: "fixed" },
+    );
     last = match.index + match[0].length;
   }
-  if (last < line.length) segments.push({ text: line.slice(last), doubtful: false });
+  if (last < line.length) segments.push({ text: line.slice(last), kind: "normal" });
   return segments;
 }
 
-// Le n-ième mot douteux d'un texte (en partant de 0).
-export function doubtAt(text: string, n: number): string {
-  return [...text.matchAll(DOUBT)][n]?.[1] ?? "";
+// Le n-ième mot marqué (à vérifier ou corrigé) d'un texte, en partant de 0.
+export function markAt(text: string, n: number): string {
+  const match = [...text.matchAll(MARK)][n];
+  return match ? (match[1] ?? match[2]) : "";
 }
 
-// Remplace le n-ième mot douteux par `word` : il n'est plus signalé.
-export function resolveDoubt(text: string, n: number, word: string): string {
+// Remplace le n-ième mot marqué par `word`, désormais marqué comme corrigé.
+export function fixMark(text: string, n: number, word: string): string {
   let count = 0;
-  return text.replace(DOUBT, (whole) => (count++ === n ? word : whole));
+  return text.replace(MARK, (whole) => (count++ === n ? `⟨${word}⟩` : whole));
 }
 
 export function countDoubts(text: string): number {
   return [...text.matchAll(DOUBT)].length;
 }
 
-export function removeDoubtMarks(text: string): string {
-  return text.replace(/[⟦⟧]/g, "");
+// Texte sans aucune marque (pour la traduction).
+export function removeMarks(text: string): string {
+  return text.replace(/[⟦⟧⟨⟩]/g, "");
 }
 
-// Met en rouge (entoure de ⟦ ⟧) chaque apparition exacte de `word` qui n'est pas déjà signalée.
+// Texte sans les marques des mots corrigés, mais avec les mots à vérifier (pour la relecture).
+export function removeFixedMarks(text: string): string {
+  return text.replace(/[⟨⟩]/g, "");
+}
+
+// Met en rouge (entoure de ⟦ ⟧) chaque apparition exacte de `word` qui n'est pas déjà marquée.
 export function markWord(text: string, word: string): string {
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const alone = new RegExp(`(?<![\\p{L}\\p{M}⟦])${escaped}(?![\\p{L}\\p{M}⟧])`, "gu");
+  const alone = new RegExp(`(?<![\\p{L}\\p{M}⟦⟨])${escaped}(?![\\p{L}\\p{M}⟧⟩])`, "gu");
   return text.replace(alone, `⟦${word}⟧`);
 }

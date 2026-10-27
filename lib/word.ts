@@ -2,7 +2,7 @@
 // L'arabe est écrit de droite à gauche, le français et l'anglais de gauche à droite.
 
 import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
-import { isArabic, splitDoubts, toLines } from "@/lib/text";
+import { isArabic, splitMarks, toLines } from "@/lib/text";
 
 export type WordContent = {
   fileName: string;
@@ -18,12 +18,12 @@ const RED = "DC2626";
 
 function line(text: string): Paragraph {
   const arabic = isArabic(text);
-  const runs = splitDoubts(text).map(
+  const runs = splitMarks(text).map(
     (segment) =>
       new TextRun({
         text: segment.text,
         font: FONT,
-        color: segment.doubtful ? RED : undefined,
+        color: segment.kind === "doubt" ? RED : undefined,
         ...(arabic
           ? {
               rightToLeft: true,

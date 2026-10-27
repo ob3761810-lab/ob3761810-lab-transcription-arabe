@@ -13,7 +13,9 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
 6. Je peux écouter ou regarder le fichier dans la page, avec un minutage cliquable toutes les 2 minutes.
 7. Les mots à vérifier sont en rouge : ceux dont l'IA doute pendant la transcription, et ceux repérés par
    une relecture automatique du texte (orthographe, harakat, accord), avec une correction proposée.
-   Un clic permet de les corriger ou de les confirmer. Non vérifiés, ils restent en rouge dans le PDF et le Word.
+   Un clic ouvre une fenêtre : choisir un mot dans la liste proposée, écrire sa propre correction, ou confirmer.
+   Les mots corrigés sont soulignés en vert et restent modifiables (faute de frappe, retour au mot d'origine).
+   Non vérifiés, les mots restent en rouge dans le PDF et le Word.
 
 Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Facebook, TikTok) pour le redonner à l'utilisateur.
 
