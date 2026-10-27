@@ -3,7 +3,7 @@
 // Toute l'application : choisir un fichier, obtenir le texte avec les harakat,
 // le traduire, puis le télécharger en PDF.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { splitIntoWavChunks } from "@/lib/audio";
 
 type Status =
@@ -11,7 +11,7 @@ type Status =
   | { step: "preparing" }
   | { step: "transcribing"; part: number; total: number; waiting: boolean }
   | { step: "done" }
-  | { step: "error"; message: string };
+  | { step: "error"; message: string; canResume: boolean };
 
 const TRANSLATIONS = [
   { code: "fr", label: "Français" },
@@ -58,6 +58,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [translation, setTranslation] = useState<{ label: string; text: string } | null>(null);
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState("");
+  // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
+  const chunks = useRef<Blob[]>([]);
+  const nextPart = useRef(0);
 
   const busy = status.step === "preparing" || status.step === "transcribing";
 
@@ -70,17 +73,47 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     );
   }
 
+  // Transcrit un extrait. Si Google est saturé (limite gratuite ou surcharge),
+  // on attend un peu puis on réessaie. En cas d'échec, l'erreur indique la cause.
   async function transcribePart(chunk: Blob, part: number, total: number): Promise<string> {
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 0; ; attempt++) {
       const response = await fetch("/api/transcribe", { method: "POST", body: chunk });
       if (response.ok) return (await response.json()).text;
-      if (response.status !== 429 || attempt === MAX_RETRIES) break;
-      // Limite gratuite atteinte : on attend un peu avant de réessayer.
+      const retryable = response.status === 429 || response.status === 503;
+      if (!retryable || attempt === MAX_RETRIES) {
+        throw new Error(response.status === 429 ? "limite" : "autre");
+      }
       setStatus({ step: "transcribing", part, total, waiting: true });
       await wait(RETRY_SECONDS);
       setStatus({ step: "transcribing", part, total, waiting: false });
     }
-    throw new Error("transcription");
+  }
+
+  // Transcrit les extraits à partir de `nextPart`, à la suite du texte déjà obtenu.
+  async function transcribeRemainingParts(startText: string) {
+    let text = startText;
+    const total = chunks.current.length;
+    try {
+      for (let i = nextPart.current; i < total; i++) {
+        setStatus({ step: "transcribing", part: i + 1, total, waiting: false });
+        const partText = await transcribePart(chunks.current[i], i + 1, total);
+        text = text && partText ? `${text}\n${partText}` : text || partText;
+        setTranscript(text);
+        nextPart.current = i + 1;
+      }
+      setStatus({ step: "done" });
+    } catch (error) {
+      console.error(error);
+      const done = `${nextPart.current} partie(s) sur ${total} transcrite(s).`;
+      setStatus({
+        step: "error",
+        canResume: true,
+        message:
+          error instanceof Error && error.message === "limite"
+            ? `La limite gratuite de Google est atteinte pour le moment. ${done} Cliquez sur « Reprendre » plus tard (dans quelques minutes, ou demain si la limite du jour est atteinte).`
+            : `La transcription s'est arrêtée en cours de route. ${done} Cliquez sur « Reprendre » pour continuer.`,
+      });
+    }
   }
 
   async function handleTranscribe(event: React.FormEvent) {
@@ -90,37 +123,22 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     setTranslation(null);
     setTranslationError("");
 
-    let chunks: Blob[];
     try {
       setStatus({ step: "preparing" });
-      chunks = await splitIntoWavChunks(file);
+      chunks.current = await splitIntoWavChunks(file);
+      nextPart.current = 0;
     } catch (error) {
       console.error(error);
       setStatus({
         step: "error",
+        canResume: false,
         message:
           "Ce fichier n'a pas pu être lu. Vérifiez qu'il s'agit bien d'un fichier audio ou vidéo. S'il est très long, essayez avec un fichier plus court.",
       });
       return;
     }
 
-    try {
-      let text = "";
-      for (let i = 0; i < chunks.length; i++) {
-        setStatus({ step: "transcribing", part: i + 1, total: chunks.length, waiting: false });
-        const partText = await transcribePart(chunks[i], i + 1, chunks.length);
-        text = text ? `${text}\n${partText}` : partText;
-        setTranscript(text);
-      }
-      setStatus({ step: "done" });
-    } catch (error) {
-      console.error(error);
-      setStatus({
-        step: "error",
-        message:
-          "La transcription s'est arrêtée en cours de route. Le texte déjà obtenu est affiché ci-dessous ; réessayez plus tard pour le reste.",
-      });
-    }
+    await transcribeRemainingParts("");
   }
 
   async function handleTranslate(code: string, label: string) {
@@ -189,9 +207,18 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           </p>
         )}
         {status.step === "error" && (
-          <p className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
-            {status.message}
-          </p>
+          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+            <p>{status.message}</p>
+            {status.canResume && (
+              <button
+                type="button"
+                onClick={() => transcribeRemainingParts(transcript)}
+                className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800"
+              >
+                Reprendre
+              </button>
+            )}
+          </div>
         )}
       </div>
 

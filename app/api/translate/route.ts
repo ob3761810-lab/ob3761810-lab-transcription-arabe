@@ -1,7 +1,7 @@
 // Traduit le texte transcrit en français, en anglais ou en arabe.
 
 import { NextResponse } from "next/server";
-import { LANGUAGES, RateLimitError, translate, type Language } from "@/lib/gemini";
+import { BusyError, LANGUAGES, RateLimitError, translate, type Language } from "@/lib/gemini";
 
 export const maxDuration = 300;
 
@@ -20,6 +20,13 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Limite gratuite atteinte. Réessayez dans une minute." },
         { status: 429 },
+      );
+    }
+    if (error instanceof BusyError) {
+      console.error("Gemini surchargé :", error);
+      return NextResponse.json(
+        { error: "Le service de Google est surchargé. Réessayez dans une minute." },
+        { status: 503 },
       );
     }
     console.error("Erreur pendant la traduction :", error);

@@ -6,6 +6,9 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 // Erreur levée quand la limite gratuite de Google est atteinte (trop de demandes d'un coup).
 export class RateLimitError extends Error {}
 
+// Erreur levée quand Google est momentanément surchargé ou indisponible.
+export class BusyError extends Error {}
+
 type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
 async function askGemini(parts: GeminiPart[]): Promise<string> {
@@ -28,6 +31,9 @@ async function askGemini(parts: GeminiPart[]): Promise<string> {
 
   if (response.status === 429) {
     throw new RateLimitError(await response.text());
+  }
+  if (response.status >= 500) {
+    throw new BusyError(`Gemini a répondu ${response.status} : ${await response.text()}`);
   }
   if (!response.ok) {
     throw new Error(`Gemini a répondu ${response.status} : ${await response.text()}`);
