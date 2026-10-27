@@ -2,7 +2,7 @@
 // Rien n'est conservé : l'extrait est transmis à Gemini puis oublié.
 
 import { NextResponse } from "next/server";
-import { BusyError, RateLimitError, transcribeWithHarakat } from "@/lib/gemini";
+import { BusyError, RateLimitError, toVersion, transcribeWithHarakat } from "@/lib/gemini";
 
 export const maxDuration = 300;
 
@@ -12,8 +12,10 @@ export async function POST(request: Request) {
     if (audio.byteLength === 0) {
       return NextResponse.json({ error: "Extrait audio vide." }, { status: 400 });
     }
-    const { text, lite } = await transcribeWithHarakat(audio);
-    return NextResponse.json({ text, lite });
+    // Version choisie par l'utilisateur : ?version=normale ou ?version=legere
+    const version = toVersion(new URL(request.url).searchParams.get("version"));
+    const text = await transcribeWithHarakat(audio, version);
+    return NextResponse.json({ text, lite: version === "legere" });
   } catch (error) {
     if (error instanceof RateLimitError) {
       // Limite gratuite atteinte : le navigateur attend un peu puis réessaie.

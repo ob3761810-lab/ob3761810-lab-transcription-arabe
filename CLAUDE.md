@@ -23,6 +23,9 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
 - Next.js (TypeScript) + Tailwind, hébergé sur Vercel (offre gratuite), code sur GitHub.
 - Intelligence artificielle : Google Gemini, offre gratuite (transcription, harakat, traduction).
   Tout passe par un seul fichier `lib/gemini.ts`. Seul réglage : la clé `GEMINI_API_KEY` sur Vercel.
+- Deux versions au choix de l'utilisateur : « Normale » (gemini-flash-latest, par défaut) et « Légère »
+  (gemini-flash-lite-latest). Jamais de bascule automatique : si la normale est saturée, la page attend
+  et propose à l'utilisateur de passer en version légère.
 - Le fichier est préparé dans le navigateur (`lib/audio.ts`) : son extrait, mono 16 kHz, découpé en
   extraits de 2 minutes (limite de 4,5 Mo par envoi sur Vercel). Aucun fichier n'est stocké.
 - PDF : impression du navigateur (« Enregistrer au format PDF »), qui affiche parfaitement l'arabe.

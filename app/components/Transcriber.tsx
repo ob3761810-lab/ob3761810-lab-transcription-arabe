@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
-import type { Issue } from "@/lib/gemini";
+import type { Issue, Version } from "@/lib/gemini";
 import {
   countDoubts,
   fixMark,
@@ -107,6 +107,14 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [translationError, setTranslationError] = useState("");
   // Choix d'affichage : avec ou sans harakat (le PDF suit ce choix).
   const [withHarakat, setWithHarakat] = useState(true);
+  // Version choisie par l'utilisateur. La copie dans `versionRef` permet à une transcription
+  // déjà en cours d'utiliser la nouvelle version dès le prochain envoi.
+  const [version, setVersion] = useState<Version>("normale");
+  const versionRef = useRef<Version>("normale");
+  function chooseVersion(choice: Version) {
+    setVersion(choice);
+    versionRef.current = choice;
+  }
   const shown = (text: string) => (withHarakat ? text : removeHarakat(text));
   const [wordError, setWordError] = useState("");
   // Relecture : corrections proposées pour chaque mot repéré, et état de la relecture.
@@ -159,7 +167,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     total: number,
   ): Promise<{ text: string; lite: boolean }> {
     for (let attempt = 0; ; attempt++) {
-      const response = await fetch("/api/transcribe", { method: "POST", body: chunk });
+      const used = versionRef.current;
+      const response = await fetch(`/api/transcribe?version=${used}`, {
+        method: "POST",
+        body: chunk,
+      });
       if (response.ok) return response.json();
       const retryable = response.status === 429 || response.status === 503;
       if (!retryable || attempt === MAX_RETRIES) {
@@ -167,7 +179,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       }
       const reason = response.status === 429 ? "limite" : "surcharge";
       setStatus({ step: "transcribing", part, total, waiting: reason });
-      await wait(RETRY_SECONDS);
+      // On attend avant de réessayer, sauf si l'utilisateur change de version entre-temps.
+      for (let second = 0; second < RETRY_SECONDS && versionRef.current === used; second++) {
+        await wait(1);
+      }
       setStatus({ step: "transcribing", part, total, waiting: null });
     }
   }
@@ -249,7 +264,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       const response = await fetch("/api/check", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: plain }),
+        body: JSON.stringify({ text: plain, version: versionRef.current }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -420,7 +435,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: removeMarks(transcript), language: code }),
+        body: JSON.stringify({
+          text: removeMarks(transcript),
+          language: code,
+          version: versionRef.current,
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -457,6 +476,37 @@ export default function Transcriber({ ready }: { ready: boolean }) {
             }}
           />
         </label>
+
+        <fieldset className="rounded-xl border border-zinc-200 px-4 py-3">
+          <legend className="px-1 text-sm font-medium text-zinc-700">Version</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(
+              [
+                ["normale", "Normale", "Meilleure qualité des harakat."],
+                ["legere", "Légère", "Plus rapide, limite gratuite séparée, harakat moins précises."],
+              ] as const
+            ).map(([value, label, help]) => (
+              <label
+                key={value}
+                className={`flex cursor-pointer gap-2 rounded-lg border px-3 py-2 ${
+                  version === value ? "border-emerald-600 bg-emerald-50" : "border-zinc-200"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="version"
+                  checked={version === value}
+                  onChange={() => chooseVersion(value)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block font-medium text-zinc-900">{label}</span>
+                  <span className="block text-sm text-zinc-600">{help}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
 
         <button
           type="submit"
@@ -503,19 +553,42 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               `Google est momentanément surchargé : nouvel essai dans ${RETRY_SECONDS} secondes…`}
             {status.waiting === null &&
               `Transcription en cours… partie ${status.part} sur ${status.total}`}
+            {status.waiting !== null && version === "normale" && (
+              <button
+                type="button"
+                onClick={() => chooseVersion("legere")}
+                className="ml-2 rounded-lg border border-zinc-300 bg-white px-3 py-1 text-sm text-zinc-800 hover:border-emerald-500"
+              >
+                Passer en version légère
+              </button>
+            )}
           </p>
         )}
         {status.step === "error" && (
           <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
             <p>{status.message}</p>
             {status.canResume && (
-              <button
-                type="button"
-                onClick={() => transcribeRemainingParts()}
-                className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800"
-              >
-                Reprendre
-              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => transcribeRemainingParts()}
+                  className="rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800"
+                >
+                  Reprendre
+                </button>
+                {version === "normale" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      chooseVersion("legere");
+                      transcribeRemainingParts();
+                    }}
+                    className="rounded-lg border border-red-300 bg-white px-4 py-2 font-medium text-red-800 hover:bg-red-50"
+                  >
+                    Reprendre en version légère
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -599,7 +672,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   </button>
                   {liteParts[index] && (
                     <span className="no-print ml-2 text-xs text-amber-700">
-                      Version légère (Google était saturé) : vérifiez bien les harakat.
+                      Transcrit en version légère : vérifiez bien les harakat.
                     </span>
                   )}
                   <Lines text={shown(text)} renderMark={renderMark(index)} />

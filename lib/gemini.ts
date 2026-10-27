@@ -1,9 +1,16 @@
 // Seul fichier qui parle à l'intelligence artificielle (Google Gemini, offre gratuite).
 // Utilisé uniquement côté serveur : la clé GEMINI_API_KEY n'est jamais envoyée au navigateur.
 
+// Version normale (meilleure qualité) et version légère (plus rapide, limite gratuite séparée).
+// C'est l'utilisateur qui choisit la version : aucune bascule automatique de l'une à l'autre.
 const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
-// Modèle de secours, plus léger, utilisé quand le principal est surchargé ou que sa limite est atteinte.
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-lite-latest";
+const LITE_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-lite-latest";
+
+export type Version = "normale" | "legere";
+
+export function toVersion(value: unknown): Version {
+  return value === "legere" ? "legere" : "normale";
+}
 
 // Erreur levée quand la limite gratuite de Google est atteinte (trop de demandes d'un coup).
 export class RateLimitError extends Error {}
@@ -53,19 +60,9 @@ async function callModel(model: string, parts: GeminiPart[], json = false): Prom
     .trim();
 }
 
-// Essaie le modèle principal, puis le modèle de secours s'il est saturé.
-// `lite` indique que la réponse vient du modèle de secours.
-async function askGemini(
-  parts: GeminiPart[],
-  json = false,
-): Promise<{ text: string; lite: boolean }> {
-  try {
-    return { text: await callModel(MODEL, parts, json), lite: false };
-  } catch (error) {
-    if (!(error instanceof RateLimitError || error instanceof BusyError)) throw error;
-    console.error(`Modèle ${MODEL} saturé, passage à ${FALLBACK_MODEL} :`, error);
-    return { text: await callModel(FALLBACK_MODEL, parts, json), lite: true };
-  }
+// Interroge la version choisie par l'utilisateur.
+async function askGemini(parts: GeminiPart[], version: Version, json = false): Promise<string> {
+  return callModel(version === "legere" ? LITE_MODEL : MODEL, parts, json);
 }
 
 const TRANSCRIPTION_RULES = `Transcribe this audio recording exactly as spoken.
@@ -79,13 +76,14 @@ Rules:
 - If there is no speech, output nothing.`;
 
 // `audio` : un extrait au format WAV (quelques minutes au maximum).
-export async function transcribeWithHarakat(
-  audio: ArrayBuffer,
-): Promise<{ text: string; lite: boolean }> {
-  return askGemini([
-    { inline_data: { mime_type: "audio/wav", data: Buffer.from(audio).toString("base64") } },
-    { text: TRANSCRIPTION_RULES },
-  ]);
+export async function transcribeWithHarakat(audio: ArrayBuffer, version: Version): Promise<string> {
+  return askGemini(
+    [
+      { inline_data: { mime_type: "audio/wav", data: Buffer.from(audio).toString("base64") } },
+      { text: TRANSCRIPTION_RULES },
+    ],
+    version,
+  );
 }
 
 export const LANGUAGES = {
@@ -96,8 +94,13 @@ export const LANGUAGES = {
 
 export type Language = keyof typeof LANGUAGES;
 
-export async function translate(text: string, language: Language): Promise<string> {
-  const { text: translation } = await askGemini([
+export async function translate(
+  text: string,
+  language: Language,
+  version: Version,
+): Promise<string> {
+  return askGemini(
+    [
     {
       text: `Translate the following text into ${LANGUAGES[language]}.
 Rules:
@@ -106,9 +109,10 @@ Rules:
 - Never add a verse number, a hadith reference or a scholar's name that is not in the text.
 
 ${text}`,
-    },
-  ]);
-  return translation;
+      },
+    ],
+    version,
+  );
 }
 
 // Un mot probablement faux repéré par la relecture, avec 1 à 4 corrections proposées.
@@ -130,8 +134,8 @@ Text:
 `;
 
 // Relit le texte et renvoie les mots probablement faux, avec une correction proposée.
-export async function checkText(text: string): Promise<Issue[]> {
-  const { text: answer } = await askGemini([{ text: CHECK_RULES + text }], true);
+export async function checkText(text: string, version: Version): Promise<Issue[]> {
+  const answer = await askGemini([{ text: CHECK_RULES + text }], version, true);
   const cleaned = answer.replace(/^```(?:json)?\s*|\s*```$/g, "");
   const parsed: unknown = JSON.parse(cleaned);
   if (!Array.isArray(parsed)) return [];

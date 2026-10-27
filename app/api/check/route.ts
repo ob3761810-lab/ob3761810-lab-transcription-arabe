@@ -1,18 +1,18 @@
 // Relecture : repère les mots arabes probablement faux (orthographe, harakat, accord).
 
 import { NextResponse } from "next/server";
-import { BusyError, checkText, RateLimitError } from "@/lib/gemini";
+import { BusyError, checkText, RateLimitError, toVersion } from "@/lib/gemini";
 
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  const { text } = (await request.json()) as { text?: string };
+  const { text, version } = (await request.json()) as { text?: string; version?: string };
   if (typeof text !== "string" || text.trim() === "") {
     return NextResponse.json({ error: "Rien à relire." }, { status: 400 });
   }
 
   try {
-    return NextResponse.json({ issues: await checkText(text) });
+    return NextResponse.json({ issues: await checkText(text, toVersion(version)) });
   } catch (error) {
     if (error instanceof RateLimitError || error instanceof BusyError) {
       console.error("Gemini saturé pendant la relecture :", error);
