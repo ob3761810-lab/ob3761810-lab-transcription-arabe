@@ -9,9 +9,12 @@ import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
 type Status =
   | { step: "idle" }
   | { step: "preparing" }
-  | { step: "transcribing"; part: number; total: number; waiting: boolean }
+  | { step: "transcribing"; part: number; total: number; waiting: Wait }
   | { step: "done" }
   | { step: "error"; message: string; canResume: boolean };
+
+// Pourquoi la page attend avant un nouvel essai (rien = elle n'attend pas).
+type Wait = "limite" | "surcharge" | null;
 
 const TRANSLATIONS = [
   { code: "fr", label: "Français" },
@@ -106,9 +109,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       if (!retryable || attempt === MAX_RETRIES) {
         throw new Error(response.status === 429 ? "limite" : "autre");
       }
-      setStatus({ step: "transcribing", part, total, waiting: true });
+      const reason = response.status === 429 ? "limite" : "surcharge";
+      setStatus({ step: "transcribing", part, total, waiting: reason });
       await wait(RETRY_SECONDS);
-      setStatus({ step: "transcribing", part, total, waiting: false });
+      setStatus({ step: "transcribing", part, total, waiting: null });
     }
   }
 
@@ -117,7 +121,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     const total = chunks.current.length;
     try {
       for (let i = nextPart.current; i < total; i++) {
-        setStatus({ step: "transcribing", part: i + 1, total, waiting: false });
+        setStatus({ step: "transcribing", part: i + 1, total, waiting: null });
         const partText = await transcribePart(chunks.current[i], i + 1, total);
         setParts((previous) => [...previous.slice(0, i), partText]);
         nextPart.current = i + 1;
@@ -253,9 +257,12 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         )}
         {status.step === "transcribing" && (
           <p className="mt-6 text-zinc-700">
-            {status.waiting
-              ? `Limite gratuite de Google atteinte : nouvel essai dans ${RETRY_SECONDS} secondes…`
-              : `Transcription en cours… partie ${status.part} sur ${status.total}`}
+            {status.waiting === "limite" &&
+              `Limite gratuite de Google atteinte : nouvel essai dans ${RETRY_SECONDS} secondes…`}
+            {status.waiting === "surcharge" &&
+              `Google est momentanément surchargé : nouvel essai dans ${RETRY_SECONDS} secondes…`}
+            {status.waiting === null &&
+              `Transcription en cours… partie ${status.part} sur ${status.total}`}
           </p>
         )}
         {status.step === "error" && (
