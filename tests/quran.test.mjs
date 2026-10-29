@@ -142,3 +142,13 @@ test("rapidité : un long texte est analysé en moins d'une seconde", () => {
   assert.equal(passages.length, 400);
   assert.ok(seconds < 1, `trop lent : ${seconds} s`);
 });
+
+test("correction d'un mot ordinaire (non signalé) : il devient « corrigé »", async () => {
+  const { splitWords, replaceRange } = await import("../lib/text.ts");
+  const text = "قَالَ الشَّيْخُ: الْعِلْمُ نُورٌ";
+  const word = splitWords(text).filter((piece) => piece.word)[2];
+  assert.equal(word.text, "الْعِلْمُ");
+  const corrected = replaceRange(text, word.start, word.start + word.text.length, "الْعِلْمَ");
+  assert.equal(corrected, "قَالَ الشَّيْخُ: ⟨الْعِلْمَ⟩ نُورٌ");
+  assert.equal(splitMarks(corrected)[1].kind, "fixed");
+});

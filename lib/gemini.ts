@@ -206,3 +206,29 @@ export async function checkText(text: string, version: Version): Promise<Issue[]
       reason: item.reason,
     }));
 }
+
+const SUGGEST_RULES = `A word in this transcription of a religious lesson may be wrong (misheard, misspelled or with wrong harakat).
+Propose what the speaker most probably said, using the sentence around it.
+Answer with a JSON object:
+{"suggestions": an array of 1 to 4 possible words with full harakat (Arabic) or correct spelling (French, English), the most likely first; include the word itself with corrected harakat if it is probably right,
+ "reason": a very short explanation in French}
+Never add a verse number, a hadith reference or a scholar's name.
+`;
+
+// Propose des corrections pour un mot choisi par l'utilisateur, d'après la phrase autour.
+export async function suggestWord(word: string, context: string, version: Version): Promise<Issue> {
+  const prompt = `${SUGGEST_RULES}\nSentence: ${context}\nWord: ${word}`;
+  const answer = await askGemini([{ text: prompt }], version, true);
+  const parsed: unknown = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+  const data = (parsed ?? {}) as { suggestions?: unknown; reason?: unknown };
+  const suggestions = Array.isArray(data.suggestions)
+    ? data.suggestions
+        .filter((choice): choice is string => typeof choice === "string" && choice.trim() !== "")
+        .map((choice) => choice.trim())
+    : [];
+  return {
+    word,
+    suggestions: [...new Set(suggestions)].slice(0, 4),
+    reason: typeof data.reason === "string" ? data.reason : "",
+  };
+}

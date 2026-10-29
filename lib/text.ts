@@ -41,7 +41,8 @@ const QURAN = /⟪(on|off)\|([^|⟪⟫]*)\|([^|⟪⟫]*)\|([^|⟪⟫]*)⟫/g;
 const ANY_MARK = /⟦([^⟦⟧⟨⟩]*)⟧|⟨([^⟦⟧⟨⟩]*)⟩|⟪(on|off)\|([^|⟪⟫]*)\|([^|⟪⟫]*)\|([^|⟪⟫]*)⟫/g;
 
 export type Segment =
-  | { text: string; kind: "normal" | "doubt" | "fixed" }
+  | { text: string; kind: "normal"; start: number } // start : position dans la ligne
+  | { text: string; kind: "doubt" | "fixed" }
   | { text: string; kind: "quran"; on: boolean; reference: string };
 
 // Découpe une ligne en morceaux : texte normal, mots à vérifier, mots corrigés, passages coraniques.
@@ -49,7 +50,9 @@ export function splitMarks(line: string): Segment[] {
   const segments: Segment[] = [];
   let last = 0;
   for (const match of line.matchAll(ANY_MARK)) {
-    if (match.index > last) segments.push({ text: line.slice(last, match.index), kind: "normal" });
+    if (match.index > last) {
+      segments.push({ text: line.slice(last, match.index), kind: "normal", start: last });
+    }
     if (match[1] !== undefined) segments.push({ text: match[1], kind: "doubt" });
     else if (match[2] !== undefined) segments.push({ text: match[2], kind: "fixed" });
     else {
@@ -58,8 +61,27 @@ export function splitMarks(line: string): Segment[] {
     }
     last = match.index + match[0].length;
   }
-  if (last < line.length) segments.push({ text: line.slice(last), kind: "normal" });
+  if (last < line.length) segments.push({ text: line.slice(last), kind: "normal", start: last });
   return segments;
+}
+
+// Découpe un morceau de texte en mots et en séparateurs (espaces, ponctuation),
+// avec la position de chaque morceau.
+export function splitWords(text: string): { text: string; start: number; word: boolean }[] {
+  const pieces: { text: string; start: number; word: boolean }[] = [];
+  let last = 0;
+  for (const match of text.matchAll(/[\p{L}\p{M}]+/gu)) {
+    if (match.index > last) pieces.push({ text: text.slice(last, match.index), start: last, word: false });
+    pieces.push({ text: match[0], start: match.index, word: true });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) pieces.push({ text: text.slice(last), start: last, word: false });
+  return pieces;
+}
+
+// Remplace le texte entre `start` et `end` par `word`, marqué comme corrigé.
+export function replaceRange(text: string, start: number, end: number, word: string): string {
+  return `${text.slice(0, start)}⟨${word}⟩${text.slice(end)}`;
 }
 
 // Les parenthèses coraniques ﴿ ﴾ entourent les versets, pas l'isti'adha (formule, pas un verset).

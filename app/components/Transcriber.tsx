@@ -3,7 +3,7 @@
 // Toute l'application : choisir un fichier, obtenir le texte avec les harakat,
 // le traduire, puis le télécharger en PDF.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
 import { isPdf, PageTooLargeError, splitPdf } from "@/lib/pdf";
 import type { Issue, Version } from "@/lib/gemini";
@@ -17,11 +17,12 @@ import {
   removeFixedMarks,
   removeHarakat,
   removeMarks,
+  replaceRange,
   splitMarks,
+  splitWords,
   splitText,
   quranBrackets,
   toggleQuran,
-  toLines,
 } from "@/lib/text";
 
 type Status =
@@ -42,6 +43,14 @@ const TRANSLATIONS = [
 
 const RETRY_SECONDS = 30;
 const MAX_RETRIES = 4;
+
+// Mot en cours de correction : un mot marqué (rouge ou vert, numéro n dans la partie)
+// ou un mot ordinaire choisi par l'utilisateur (position dans le texte de la partie).
+type Editing = {
+  part: number;
+  target: { n: number } | { start: number; end: number };
+  value: string;
+};
 
 const wait = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
@@ -78,36 +87,71 @@ function DefaultQuran({ text, on, reference }: { text: string; on: boolean; refe
   );
 }
 
-// Affiche un texte ligne par ligne. Les mots marqués (à vérifier ou corrigés) sont dessinés
-// par `renderMark`, qui reçoit leur numéro dans le texte (0, 1, 2…), le mot et son type.
-// Les passages coraniques sont dessinés par `renderQuran`, avec leur propre numéro.
+// Affiche un texte ligne par ligne. `show` transforme le texte affiché (par exemple sans harakat).
+// Les mots marqués (à vérifier ou corrigés) sont dessinés par `renderMark`, qui reçoit leur numéro
+// dans le texte (0, 1, 2…), le mot et son type. Les passages coraniques sont dessinés par
+// `renderQuran`, avec leur propre numéro. Les autres mots, par `renderWord` s'il est donné,
+// avec leur position dans le texte d'origine.
 function Lines({
   text,
+  show = (value) => value,
   renderMark = (_, word, kind) =>
     kind === "doubt" ? <span className="text-red-600">{word}</span> : word,
   renderQuran = (_, passage) => <DefaultQuran {...passage} />,
+  renderWord,
 }: {
   text: string;
+  show?: (value: string) => string;
   renderMark?: (n: number, word: string, kind: "doubt" | "fixed") => React.ReactNode;
   renderQuran?: (
     n: number,
     passage: { text: string; on: boolean; reference: string },
   ) => React.ReactNode;
+  renderWord?: (start: number, end: number, word: string) => React.ReactNode;
 }) {
   let markNumber = 0;
   let quranNumber = 0;
+  // Chaque ligne avec sa position dans le texte, pour retrouver le mot cliqué.
+  const lines: { line: string; start: number }[] = [];
+  for (let start = 0; start <= text.length; ) {
+    const end = text.indexOf("\n", start);
+    const line = end === -1 ? text.slice(start) : text.slice(start, end);
+    if (line.trim() !== "") lines.push({ line, start });
+    if (end === -1) break;
+    start = end + 1;
+  }
   return (
     <div className="space-y-2">
-      {toLines(text).map((line, index) => {
-        const content = splitMarks(line).map((segment, i) =>
-          segment.kind === "normal" ? (
-            segment.text
-          ) : segment.kind === "quran" ? (
-            <span key={i}>{renderQuran(quranNumber++, segment)}</span>
-          ) : (
-            <span key={i}>{renderMark(markNumber++, segment.text, segment.kind)}</span>
-          ),
-        );
+      {lines.map(({ line, start: lineStart }, index) => {
+        const content = splitMarks(line).map((segment, i) => {
+          if (segment.kind === "quran") {
+            return (
+              <span key={i}>
+                {renderQuran(quranNumber++, { ...segment, text: show(segment.text) })}
+              </span>
+            );
+          }
+          if (segment.kind !== "normal") {
+            return (
+              <span key={i}>{renderMark(markNumber++, show(segment.text), segment.kind)}</span>
+            );
+          }
+          if (!renderWord) return <Fragment key={i}>{show(segment.text)}</Fragment>;
+          return (
+            <Fragment key={i}>
+              {splitWords(segment.text).map((piece) => {
+                const start = lineStart + segment.start + piece.start;
+                return piece.word ? (
+                  <Fragment key={piece.start}>
+                    {renderWord(start, start + piece.text.length, show(piece.text))}
+                  </Fragment>
+                ) : (
+                  show(piece.text)
+                );
+              })}
+            </Fragment>
+          );
+        });
         return isArabic(line) ? (
           <p key={index} dir="rtl" className="font-arabic text-2xl leading-[2.2]">
             {content}
@@ -156,7 +200,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     found?: number;
   }>({ step: "idle" });
   // Mot douteux en cours de correction : partie, numéro du mot dans la partie, texte saisi.
-  const [editing, setEditing] = useState<{ part: number; n: number; value: string } | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  // Demande de propositions à l'IA pour le mot en cours de correction.
+  const [suggesting, setSuggesting] = useState<
+    { step: "idle" } | { step: "loading" } | { step: "error"; message: string }
+  >({ step: "idle" });
   // Passage coranique dont la fenêtre (référence, annuler) est ouverte.
   const [openQuran, setOpenQuran] = useState<{ part: number; n: number } | null>(null);
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
@@ -383,12 +431,26 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     }
   }
 
+  // Le mot en cours de correction, tel qu'il est écrit dans le texte.
+  function editedWord(edit: Editing): string {
+    const text = parts[edit.part] ?? "";
+    return "n" in edit.target
+      ? markAt(text, edit.target.n)
+      : text.slice(edit.target.start, edit.target.end);
+  }
+
+  // Ouvre la fenêtre de correction pour un mot marqué (numéro n) ou un mot ordinaire (position).
+  function startEditing(part: number, target: Editing["target"], value: string) {
+    setEditing({ part, target, value });
+    setSuggesting({ step: "idle" });
+  }
+
   // Remplace le mot en cours de correction. Il devient « corrigé » : souligné en vert,
   // et toujours modifiable (avec le mot d'origine proposé dans la liste).
   function confirmWord(word: string) {
     if (!editing || word.trim() === "") return;
-    const { part, n } = editing;
-    const current = markAt(parts[part], n);
+    const { part, target } = editing;
+    const current = editedWord(editing);
     const chosen = word.trim();
     setSuggestions((previous) => {
       const known = previous[current];
@@ -403,81 +465,153 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       };
     });
     setParts((previous) =>
-      previous.map((text, index) => (index === part ? fixMark(text, n, chosen) : text)),
+      previous.map((text, index) => {
+        if (index !== part) return text;
+        return "n" in target
+          ? fixMark(text, target.n, chosen)
+          : replaceRange(text, target.start, target.end, chosen);
+      }),
     );
     setEditing(null);
+  }
+
+  // Demande à l'IA quelques mots possibles pour le mot en cours de correction,
+  // d'après la phrase autour (seulement quand l'utilisateur clique sur le bouton).
+  async function askSuggestions() {
+    if (!editing) return;
+    const word = editedWord(editing);
+    const plain = removeMarks(parts[editing.part] ?? "");
+    const at = Math.max(0, plain.indexOf(word));
+    const context = plain.slice(Math.max(0, at - 300), at + word.length + 300);
+    setSuggesting({ step: "loading" });
+    try {
+      const response = await fetch("/api/suggest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ word, context, version: versionRef.current }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setSuggesting({ step: "error", message: data.error });
+        return;
+      }
+      const issue: Issue = data.issue;
+      setSuggestions((previous) => {
+        const known = previous[word];
+        return {
+          ...previous,
+          [word]: {
+            word,
+            suggestions: [...new Set([...issue.suggestions, ...(known?.suggestions ?? [])])].slice(
+              0,
+              6,
+            ),
+            reason: issue.reason || known?.reason || "",
+          },
+        };
+      });
+      setSuggesting(
+        issue.suggestions.length > 0
+          ? { step: "idle" }
+          : { step: "error", message: "Aucune proposition : écrivez votre correction." },
+      );
+    } catch (error) {
+      console.error(error);
+      setSuggesting({
+        step: "error",
+        message: "Les propositions n'ont pas pu être obtenues. Écrivez votre correction.",
+      });
+    }
+  }
+
+  // Fenêtre de correction : mots proposés, bouton « Proposer des corrections », saisie libre.
+  function correctionPanel(kind: "doubt" | "fixed" | "plain") {
+    if (!editing) return null;
+    const current = editedWord(editing);
+    const known = suggestions[current];
+    return (
+      <span className="no-print my-1 inline-flex max-w-full flex-col gap-2 rounded-lg border border-stone-300 bg-white p-3 align-middle font-sans text-base shadow-sm">
+        {known?.reason && (
+          <span dir="ltr" className="text-left text-sm text-stone-600">
+            <MixedText text={known.reason} />
+          </span>
+        )}
+        {known && known.suggestions.length > 0 && (
+          <span dir="ltr" className="flex flex-wrap items-center gap-2 text-left text-sm">
+            <span className="text-stone-600">Mots proposés :</span>
+            {known.suggestions.map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                onClick={() => confirmWord(choice)}
+                className="font-arabic rounded-lg border border-brand-600 bg-brand-50 px-3 py-1 text-xl text-brand-900 hover:bg-brand-100"
+              >
+                {choice}
+              </button>
+            ))}
+          </span>
+        )}
+        <span dir="ltr" className="flex flex-wrap items-center gap-2 text-left text-sm">
+          {suggesting.step === "loading" ? (
+            <span className="text-stone-600">Recherche de propositions…</span>
+          ) : (
+            <button
+              type="button"
+              onClick={askSuggestions}
+              className="rounded border border-gold-400 bg-gold-100 px-3 py-1 text-gold-700 hover:bg-gold-200"
+            >
+              ✨ {known && known.suggestions.length > 0 ? "Autres propositions" : "Proposer des corrections"}
+            </button>
+          )}
+          {suggesting.step === "error" && (
+            <span className="text-red-700">{suggesting.message}</span>
+          )}
+        </span>
+        <span dir="ltr" className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-stone-600">
+            {known && known.suggestions.length > 0 ? "Ou écrivez :" : "Votre correction :"}
+          </span>
+          <input
+            dir="auto"
+            autoFocus
+            value={editing.value}
+            onChange={(event) => setEditing({ ...editing, value: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") confirmWord(editing.value);
+              if (event.key === "Escape") setEditing(null);
+            }}
+            className="font-arabic w-44 rounded border border-stone-400 px-2 py-0.5 text-xl"
+          />
+          <button
+            type="button"
+            onClick={() => confirmWord(editing.value)}
+            className="rounded bg-brand-700 px-3 py-1 text-white"
+          >
+            Corriger
+          </button>
+          {kind === "doubt" && (
+            <button
+              type="button"
+              onClick={() => confirmWord(current)}
+              className="rounded border border-stone-300 bg-white px-3 py-1 text-stone-700"
+            >
+              C&apos;est juste
+            </button>
+          )}
+          <button type="button" onClick={() => setEditing(null)} className="px-2 py-1 text-stone-500">
+            Annuler
+          </button>
+        </span>
+      </span>
+    );
   }
 
   // Mot marqué : en rouge (à vérifier) ou souligné en vert (corrigé), cliquable ;
   // ou fenêtre de correction s'il est en cours de correction.
   function renderMark(part: number) {
     return function MarkedWord(n: number, word: string, kind: "doubt" | "fixed") {
-      const current = markAt(parts[part], n);
-      const known = suggestions[current];
-      if (editing?.part === part && editing.n === n) {
-        return (
-          <span className="no-print my-1 inline-flex max-w-full flex-col gap-2 rounded-lg border border-stone-300 bg-white p-3 align-middle font-sans text-base shadow-sm">
-            {known?.reason && (
-              <span dir="ltr" className="text-left text-sm text-stone-600">
-                <MixedText text={known.reason} />
-              </span>
-            )}
-            {known && known.suggestions.length > 0 && (
-              <span dir="ltr" className="flex flex-wrap items-center gap-2 text-left text-sm">
-                <span className="text-stone-600">Mots proposés :</span>
-                {known.suggestions.map((choice) => (
-                  <button
-                    key={choice}
-                    type="button"
-                    onClick={() => confirmWord(choice)}
-                    className="font-arabic rounded-lg border border-brand-600 bg-brand-50 px-3 py-1 text-xl text-brand-900 hover:bg-brand-100"
-                  >
-                    {choice}
-                  </button>
-                ))}
-              </span>
-            )}
-            <span dir="ltr" className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-stone-600">
-                {known && known.suggestions.length > 0 ? "Ou écrivez :" : "Votre correction :"}
-              </span>
-              <input
-                dir="rtl"
-                autoFocus
-                value={editing.value}
-                onChange={(event) => setEditing({ ...editing, value: event.target.value })}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") confirmWord(editing.value);
-                  if (event.key === "Escape") setEditing(null);
-                }}
-                className="font-arabic w-44 rounded border border-stone-400 px-2 py-0.5 text-xl"
-              />
-              <button
-                type="button"
-                onClick={() => confirmWord(editing.value)}
-                className="rounded bg-brand-700 px-3 py-1 text-white"
-              >
-                Corriger
-              </button>
-              {kind === "doubt" && (
-                <button
-                  type="button"
-                  onClick={() => confirmWord(current)}
-                  className="rounded border border-stone-300 bg-white px-3 py-1 text-stone-700"
-                >
-                  C&apos;est juste
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setEditing(null)}
-                className="px-2 py-1 text-stone-500"
-              >
-                Annuler
-              </button>
-            </span>
-          </span>
-        );
+      if (editing?.part === part && "n" in editing.target && editing.target.n === n) {
+        return correctionPanel(kind);
       }
       return (
         <button
@@ -487,7 +621,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               ? "Mot à vérifier : cliquez pour le corriger"
               : "Mot corrigé : cliquez pour le modifier"
           }
-          onClick={() => setEditing({ part, n, value: current })}
+          onClick={() => startEditing(part, { n }, markAt(parts[part], n))}
           className={
             kind === "doubt"
               ? "text-red-600 underline decoration-dotted underline-offset-4 hover:bg-red-50"
@@ -496,6 +630,27 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         >
           {word}
         </button>
+      );
+    };
+  }
+
+  // Mot ordinaire (ni rouge, ni vert) : cliquable aussi, pour corriger une erreur non signalée.
+  function renderWord(part: number) {
+    return function PlainWord(start: number, end: number, word: string) {
+      const target = editing?.target;
+      if (editing?.part === part && target && "start" in target && target.start === start) {
+        return correctionPanel("plain");
+      }
+      return (
+        <span
+          role="button"
+          tabIndex={-1}
+          title="Cliquez pour corriger ce mot"
+          onClick={() => startEditing(part, { start, end }, parts[part].slice(start, end))}
+          className="cursor-pointer rounded hover:bg-gold-100"
+        >
+          {word}
+        </span>
       );
     };
   }
@@ -901,11 +1056,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               )}
               {hasQuran && (
                 <p className="mt-3 rounded-lg border border-gold-200 bg-gold-100/50 px-4 py-2 text-sm text-stone-800">
-                  Les versets du Coran reconnus sont remplacés par le texte officiel (Tanzil), entre{" "}
-                  <bdi dir="rtl" className="font-arabic">
-                    ﴿ ﴾
-                  </bdi>
-                  , avec leur référence.
+                  Les versets du Coran reconnus sont remplacés par le texte officiel (Tanzil), sur fond doré, avec leur référence.
                   <span className="no-print">
                     {" "}
                     Cliquez sur un verset pour annuler le remplacement si ce n&apos;est pas un
@@ -957,9 +1108,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                         </span>
                       )}
                       <Lines
-                        text={shown(text)}
+                        text={text}
+                        show={shown}
                         renderMark={renderMark(index)}
                         renderQuran={renderQuran(index)}
+                        renderWord={renderWord(index)}
                       />
                     </div>
                   ),
@@ -972,7 +1125,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                     Traduction ({translation.label})
                   </h2>
                   <div className="mt-4 rounded-2xl border border-gold-200 bg-paper p-6 text-stone-900 shadow-inner sm:p-8">
-                    <Lines text={shown(translation.text)} />
+                    <Lines text={translation.text} show={shown} />
                   </div>
                 </section>
               )}

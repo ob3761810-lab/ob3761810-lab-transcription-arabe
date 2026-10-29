@@ -20,6 +20,9 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
    Un clic ouvre une fenêtre : choisir un mot dans la liste proposée, écrire sa propre correction, ou confirmer.
    Les mots corrigés sont soulignés en vert et restent modifiables (faute de frappe, retour au mot d'origine).
    Non vérifiés, les mots restent en rouge dans le PDF et le Word.
+   Tous les autres mots sont aussi cliquables, pour corriger une erreur que l'IA n'a pas signalée.
+   Dans la fenêtre, un bouton « Proposer des corrections » demande à l'IA quelques mots possibles
+   (seulement sur clic, pour économiser la limite gratuite).
 8. Les versets du Coran reconnus dans le texte de l'IA sont remplacés par le texte officiel (Tanzil),
    entre ﴿ ﴾, sur fond doré, avec leur référence (sourate et verset). Un clic permet d'annuler le
    remplacement (fausse détection) ou de le rétablir. Le PDF et le Word contiennent le texte officiel
