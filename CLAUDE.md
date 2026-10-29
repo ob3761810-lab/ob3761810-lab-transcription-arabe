@@ -28,6 +28,16 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
    remplacement (fausse détection) ou de le rétablir. Le PDF et le Word contiennent le texte officiel
    et la référence. Les versets officiels ne sont jamais relus ni marqués en rouge par l'IA.
    Hadiths : pas de remplacement pour l'instant.
+9. Onglet « Sous-titres » : j'importe des sous-titres (.srt, .vtt, .txt, transcription YouTube copiée
+   avec horaires) ou je les colle, et j'obtiens un texte propre (arabe, français ou mélangé) :
+   - sans IA : horaires, numéros, balises, en-têtes et doublons supprimés, lignes recollées ;
+   - option « Mise en forme par l'IA » : hésitations retirées, ponctuation, paragraphes, intertitres rares.
+     RÈGLE ABSOLUE : l'IA ne reformule, ne résume, ne traduit, ne complète et ne corrige jamais.
+     Le code vérifie chaque morceau mot par mot ; s'il a été modifié, il est gardé sans mise en forme,
+     avec un avertissement. Un contrôle du nombre de mots avant/après est affiché.
+   - options : ajouter les harakat ; repères de temps (aucun, un par paragraphe, toutes les 5 minutes) ;
+   - versets du Coran détectés ; titre modifiable ; bouton « Modifier le texte » (modification libre) ;
+     export Word et PDF.
 
 Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Facebook, TikTok) pour le redonner à l'utilisateur.
 
@@ -50,6 +60,10 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   avec son bloc de licence ; source citée dans le pied de page avec un lien vers tanzil.net.
   Détection sans IA dans `lib/quran.ts` (normalisation, index de suites de 3 mots, tolérance réglable
   dans `SETTINGS`), appliquée côté serveur dans `app/api/transcribe/route.ts`. Tests : `npm test`.
+- Sous-titres : nettoyage sans IA dans `lib/subtitles.ts` (lecture, doublons, paragraphes, morceaux
+  d'environ 1 500 mots coupés à une fin de phrase ou au plus long silence, contrôle des mots) ;
+  mise en forme par l'IA dans `formatSubtitles` (`lib/gemini.ts`, prompt système strict), via `/api/format` ;
+  versets via `/api/quran`. Tests : `tests/subtitles.test.mjs`.
 - Nom du site : « Harakat Nass » (حَرَكَاتُ النَّصِّ). Style classique islamique : vert profond, doré,
   fond crème, motif géométrique dans l'en-tête, police arabe Amiri. Couleurs dans `app/globals.css`.
 - Pas de service payant sans mon accord.

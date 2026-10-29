@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   // Le texte du Coran (Tanzil) est lu par le serveur : il doit être inclus dans le déploiement.
   outputFileTracingIncludes: {
     "/api/transcribe": ["./data/quran-simple.txt"],
+    "/api/quran": ["./data/quran-simple.txt"],
   },
   partialPrefetching: true,
   turbopack: {

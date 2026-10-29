@@ -166,3 +166,40 @@ export function splitText(text: string, size = 2500): string[] {
   if (current.trim()) pieces.push(current);
   return pieces.filter((piece) => piece.trim() !== "");
 }
+
+// Sous-titres : une ligne « ## … » est un intertitre ; « [4:05] » au début d'une ligne est un repère de temps.
+export function lineStyle(line: string): { heading: boolean; stamp: string | null; skip: number } {
+  if (line.startsWith("## ")) return { heading: true, stamp: null, skip: 3 };
+  const stamp = line.match(/^\[(\d+:\d{2}(?::\d{2})?)\] /);
+  return { heading: false, stamp: stamp?.[1] ?? null, skip: stamp?.[0].length ?? 0 };
+}
+
+// Texte à modifier librement : un paragraphe par bloc, versets écrits « ﴿…﴾ (référence) »,
+// sans les autres marques.
+export function toEditable(text: string): string {
+  return text
+    .replace(QURAN, (_, state, reference, official, original) =>
+      state === "on" ? `${quranBrackets(official, reference)} (${reference})` : original,
+    )
+    .replace(/[⟦⟧⟨⟩]/g, "")
+    .split("\n")
+    .join("\n\n");
+}
+
+// Retour au texte de l'application après modification libre. Les versets laissés tels quels
+// restent marqués (texte officiel, référence, annulation possible) ; un verset modifié devient
+// du texte ordinaire.
+export function fromEditable(edited: string, previous: string): string {
+  let text = edited
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  for (const match of previous.matchAll(QURAN)) {
+    if (match[1] !== "on") continue;
+    const written = `${quranBrackets(match[3], match[2])} (${match[2]})`;
+    text = text.split(written).join(match[0]);
+  }
+  return text;
+}

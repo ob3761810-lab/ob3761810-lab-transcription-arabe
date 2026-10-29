@@ -46,7 +46,9 @@ export async function POST(request: Request) {
             Number(params.get("last")) || 1,
           )
         : await transcribeWithHarakat(data, version);
-    return NextResponse.json({ text: withOfficialQuran(text), lite: version === "legere" });
+    // ?quran=0 : pas de détection des versets ici (les sous-titres la font à la fin, sur le texte entier).
+    const finalText = params.get("quran") === "0" ? text : withOfficialQuran(text);
+    return NextResponse.json({ text: finalText, lite: version === "legere" });
   } catch (error) {
     if (error instanceof RateLimitError) {
       // Limite gratuite atteinte : le navigateur attend un peu puis réessaie.

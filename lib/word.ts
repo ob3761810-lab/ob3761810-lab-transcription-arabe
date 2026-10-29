@@ -2,9 +2,10 @@
 // L'arabe est écrit de droite à gauche, le français et l'anglais de gauche à droite.
 
 import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
-import { isArabic, quranBrackets, splitMarks, toLines } from "@/lib/text";
+import { isArabic, lineStyle, quranBrackets, splitMarks, toLines } from "@/lib/text";
 
 export type WordContent = {
+  title?: string; // titre du document (sous-titres) ; sinon « Transcription »
   fileName: string;
   sections: { time: string; text: string }[];
   translation: { label: string; text: string } | null;
@@ -20,7 +21,10 @@ const RED = "DC2626";
 const QURAN_COLOR = "145433";
 const REFERENCE_COLOR = "7A5F12";
 
-function line(text: string): Paragraph {
+// Une ligne du texte : paragraphe, intertitre (« ## ») ou paragraphe avec repère de temps (« [4:05] »).
+function line(full: string): Paragraph {
+  const { heading: isHeading, stamp, skip } = lineStyle(full);
+  const text = full.slice(skip);
   const arabic = isArabic(text);
   const style = arabic
     ? {
@@ -52,22 +56,38 @@ function line(text: string): Paragraph {
       }),
     ];
   });
+  if (isHeading) {
+    return new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      bidirectional: arabic,
+      alignment: AlignmentType.START,
+      spacing: { before: 360, after: 160 },
+      children: runs,
+    });
+  }
+  // Repère de temps : petit, en gris, au début du paragraphe.
+  if (stamp) {
+    runs.unshift(
+      new TextRun({ text: `[${stamp}]  `, font: FONT, size: 18, sizeComplexScript: 18, color: "71717A" }),
+    );
+  }
   if (arabic) {
     return new Paragraph({
       bidirectional: true,
       alignment: AlignmentType.START,
-      spacing: { after: 160, line: 400 },
+      spacing: { after: 240, line: 400 },
       children: runs,
     });
   }
-  return new Paragraph({ spacing: { after: 160 }, children: runs });
+  return new Paragraph({ spacing: { after: 240, line: 320 }, children: runs });
 }
 
 function heading(text: string): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_1,
+    bidirectional: isArabic(text),
     spacing: { before: 240, after: 120 },
-    children: [new TextRun({ text, font: FONT })],
+    children: [new TextRun({ text, font: FONT, rightToLeft: isArabic(text) })],
   });
 }
 
@@ -78,9 +98,14 @@ function note(text: string, color: string): Paragraph {
   });
 }
 
-export async function buildWordFile({ fileName, sections, translation }: WordContent): Promise<Blob> {
+export async function buildWordFile({
+  title,
+  fileName,
+  sections,
+  translation,
+}: WordContent): Promise<Blob> {
   const paragraphs: Paragraph[] = [
-    heading("Transcription"),
+    heading(title ?? "Transcription"),
     note(fileName, "71717A"),
     note("Texte non relu : il peut contenir des erreurs de transcription ou de harakat.", "B45309"),
     note("En rouge : mots dont l'orthographe ou les harakat sont à vérifier.", RED),

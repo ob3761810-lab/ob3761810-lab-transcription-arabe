@@ -63,6 +63,11 @@ body {
     box-shadow: none !important;
     border: none !important;
   }
+  /* Le cadre blanc chevauche l'en-tête à l'écran (-mt-8) ; à l'impression l'en-tête est caché,
+     le cadre doit donc revenir à sa place, sinon la première ligne (le titre) est coupée. */
+  .page {
+    margin-top: 0 !important;
+  }
   #document {
     margin-top: 0 !important;
   }

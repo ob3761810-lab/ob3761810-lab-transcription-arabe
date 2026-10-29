@@ -21,7 +21,13 @@ export class BusyError extends Error {}
 type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
 // `json` : demande à Google une réponse au format JSON (pour la relecture).
-async function callModel(model: string, parts: GeminiPart[], json = false): Promise<string> {
+// `system` : consignes générales (prompt système), plus strictes que le texte de la demande.
+async function callModel(
+  model: string,
+  parts: GeminiPart[],
+  json = false,
+  system?: string,
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY manquante dans les variables d'environnement");
@@ -33,6 +39,7 @@ async function callModel(model: string, parts: GeminiPart[], json = false): Prom
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
         contents: [{ role: "user", parts }],
         generationConfig: {
           temperature: 0,
@@ -61,8 +68,13 @@ async function callModel(model: string, parts: GeminiPart[], json = false): Prom
 }
 
 // Interroge la version choisie par l'utilisateur.
-async function askGemini(parts: GeminiPart[], version: Version, json = false): Promise<string> {
-  return callModel(version === "legere" ? LITE_MODEL : MODEL, parts, json);
+async function askGemini(
+  parts: GeminiPart[],
+  version: Version,
+  json = false,
+  system?: string,
+): Promise<string> {
+  return callModel(version === "legere" ? LITE_MODEL : MODEL, parts, json, system);
 }
 
 const TRANSCRIPTION_RULES = `Transcribe this audio recording exactly as spoken.
@@ -231,4 +243,28 @@ export async function suggestWord(word: string, context: string, version: Versio
     suggestions: [...new Set(suggestions)].slice(0, 4),
     reason: typeof data.reason === "string" ? data.reason : "",
   };
+}
+
+// Mise en forme de sous-titres nettoyés. Le code vérifie ensuite que les mots n'ont pas changé
+// (lib/subtitles.ts) : si l'IA a reformulé, sa réponse est refusée.
+const FORMAT_RULES = `You format the transcript of a lecture or a course (subtitles), in Arabic, French or English, possibly mixed.
+The words belong to the speaker. Your job is only to make the text readable, never to change what was said.
+
+You may ONLY do these four things:
+1. Delete hesitation sounds and filler noises: euh, heu, hum, hmm, bah, ben (only when it is a filler), uh, um, ممم, إيه, آه, امم.
+   Delete involuntary immediate repetitions of the same word or words: "le le" becomes "le", "في في" becomes "في".
+2. Add punctuation and capital letters at the start of sentences. Use Arabic punctuation (، ؛ ؟) in Arabic sentences.
+3. Split the text into logical paragraphs, separated by one empty line.
+4. Only when the topic clearly changes, insert a short heading on its own line starting with "## ", in the language of the following paragraph, made of words taken from that paragraph. Headings must be rare.
+
+ABSOLUTE RULES (never break them):
+- Keep every other word exactly as written, in the same order, in the same language and the same spelling.
+- Never rephrase, summarize, shorten, translate, complete, explain or correct the content, the grammar, the spelling or the vocabulary, even if the speaker makes a mistake or a sentence is unfinished.
+- Never delete a word that carries meaning, even if it looks like a verbal tic: يعني، طيب، إذن، bon, alors, donc, voilà, en fait, quand ils font partie de la phrase. When in doubt, keep the word.
+- The text may start or end in the middle of a sentence: leave it as it is.
+- Do not add or remove harakat. Do not add verse numbers, hadith references, scholar names, notes or comments.
+- Output only the formatted text.`;
+
+export async function formatSubtitles(text: string, version: Version): Promise<string> {
+  return askGemini([{ text: `Transcript to format:\n${text}` }], version, false, FORMAT_RULES);
 }
