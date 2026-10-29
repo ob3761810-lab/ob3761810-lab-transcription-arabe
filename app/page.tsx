@@ -20,9 +20,8 @@ export default function Home() {
             Harakat Nass
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-brand-100 sm:text-lg">
-            Transcrivez un audio ou une vidéo avec les harakat, ou vocalisez un
-            PDF ou un texte arabe. Corrigez, traduisez, puis téléchargez en PDF
-            ou en Word.
+            Transcrivez un audio ou une vidéo avec les harakat, ou vocalisez un PDF ou un texte
+            arabe. Corrigez, traduisez, puis téléchargez en PDF ou en Word.
           </p>
         </div>
       </header>
@@ -37,8 +36,8 @@ export default function Home() {
         <span dir="rtl" lang="ar" className="font-arabic text-lg text-gold-500">
           حَرَكَاتُ النَّصِّ
         </span>{" "}
-        · Harakat Nass — Les textes produits par l&apos;intelligence
-        artificielle doivent être relus.
+        · Harakat Nass — Les textes produits par l&apos;intelligence artificielle doivent être
+        relus.
         <br />
         Texte coranique : Tanzil Quran Text (Simple), ©{" "}
         <a href="https://tanzil.net" className="underline hover:text-brand-700">

@@ -46,33 +46,21 @@ export async function POST(request: Request) {
             Number(params.get("last")) || 1,
           )
         : await transcribeWithHarakat(data, version);
-    return NextResponse.json({
-      text: withOfficialQuran(text),
-      lite: version === "legere",
-    });
+    return NextResponse.json({ text: withOfficialQuran(text), lite: version === "legere" });
   } catch (error) {
     if (error instanceof RateLimitError) {
       // Limite gratuite atteinte : le navigateur attend un peu puis réessaie.
       console.error("Limite gratuite Gemini atteinte :", error);
-      return NextResponse.json(
-        { error: "Limite gratuite atteinte." },
-        { status: 429 },
-      );
+      return NextResponse.json({ error: "Limite gratuite atteinte." }, { status: 429 });
     }
     if (error instanceof BusyError) {
       // Google est surchargé : le navigateur attend un peu puis réessaie.
       console.error("Gemini surchargé :", error);
-      return NextResponse.json(
-        { error: "Service surchargé." },
-        { status: 503 },
-      );
+      return NextResponse.json({ error: "Service surchargé." }, { status: 503 });
     }
     console.error("Erreur pendant la transcription :", error);
     return NextResponse.json(
-      {
-        error:
-          "La transcription n'a pas pu être réalisée. Réessayez dans un instant.",
-      },
+      { error: "La transcription n'a pas pu être réalisée. Réessayez dans un instant." },
       { status: 500 },
     );
   }

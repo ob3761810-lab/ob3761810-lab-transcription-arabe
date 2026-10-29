@@ -4,8 +4,7 @@
 // Version normale (meilleure qualité) et version légère (plus rapide, limite gratuite séparée).
 // C'est l'utilisateur qui choisit la version : aucune bascule automatique de l'une à l'autre.
 const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
-const LITE_MODEL =
-  process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-lite-latest";
+const LITE_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-flash-lite-latest";
 
 export type Version = "normale" | "legere";
 
@@ -19,21 +18,13 @@ export class RateLimitError extends Error {}
 // Erreur levée quand Google est momentanément surchargé ou indisponible.
 export class BusyError extends Error {}
 
-type GeminiPart =
-  | { text: string }
-  | { inline_data: { mime_type: string; data: string } };
+type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
 // `json` : demande à Google une réponse au format JSON (pour la relecture).
-async function callModel(
-  model: string,
-  parts: GeminiPart[],
-  json = false,
-): Promise<string> {
+async function callModel(model: string, parts: GeminiPart[], json = false): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error(
-      "GEMINI_API_KEY manquante dans les variables d'environnement",
-    );
+    throw new Error("GEMINI_API_KEY manquante dans les variables d'environnement");
   }
 
   const response = await fetch(
@@ -55,19 +46,14 @@ async function callModel(
     throw new RateLimitError(await response.text());
   }
   if (response.status >= 500) {
-    throw new BusyError(
-      `Gemini a répondu ${response.status} : ${await response.text()}`,
-    );
+    throw new BusyError(`Gemini a répondu ${response.status} : ${await response.text()}`);
   }
   if (!response.ok) {
-    throw new Error(
-      `Gemini a répondu ${response.status} : ${await response.text()}`,
-    );
+    throw new Error(`Gemini a répondu ${response.status} : ${await response.text()}`);
   }
 
   const data = await response.json();
-  const answer: { text?: string }[] =
-    data.candidates?.[0]?.content?.parts ?? [];
+  const answer: { text?: string }[] = data.candidates?.[0]?.content?.parts ?? [];
   return answer
     .map((part) => part.text ?? "")
     .join("")
@@ -75,11 +61,7 @@ async function callModel(
 }
 
 // Interroge la version choisie par l'utilisateur.
-async function askGemini(
-  parts: GeminiPart[],
-  version: Version,
-  json = false,
-): Promise<string> {
+async function askGemini(parts: GeminiPart[], version: Version, json = false): Promise<string> {
   return callModel(version === "legere" ? LITE_MODEL : MODEL, parts, json);
 }
 
@@ -94,18 +76,10 @@ Rules:
 - If there is no speech, output nothing.`;
 
 // `audio` : un extrait au format WAV (quelques minutes au maximum).
-export async function transcribeWithHarakat(
-  audio: ArrayBuffer,
-  version: Version,
-): Promise<string> {
+export async function transcribeWithHarakat(audio: ArrayBuffer, version: Version): Promise<string> {
   return askGemini(
     [
-      {
-        inline_data: {
-          mime_type: "audio/wav",
-          data: Buffer.from(audio).toString("base64"),
-        },
-      },
+      { inline_data: { mime_type: "audio/wav", data: Buffer.from(audio).toString("base64") } },
       { text: TRANSCRIPTION_RULES },
     ],
     version,
@@ -134,12 +108,7 @@ Rules:
 - Never add a verse number, a hadith reference or a scholar's name that is not written in the PDF.`;
   return askGemini(
     [
-      {
-        inline_data: {
-          mime_type: "application/pdf",
-          data: Buffer.from(pdf).toString("base64"),
-        },
-      },
+      { inline_data: { mime_type: "application/pdf", data: Buffer.from(pdf).toString("base64") } },
       { text: rules },
     ],
     version,
@@ -148,10 +117,7 @@ Rules:
 
 // Texte collé par l'utilisateur : on ajoute les harakat sans rien changer d'autre.
 // Les harakat déjà écrites par l'auteur sont gardées ; on complète seulement les manquantes.
-export async function vocalizeText(
-  text: string,
-  version: Version,
-): Promise<string> {
+export async function vocalizeText(text: string, version: Version): Promise<string> {
   const rules = `Add harakat (tashkil) to the following text.
 Rules:
 - Keep every word exactly as written, in the same order. Never translate, never summarize, never correct the wording.
@@ -182,8 +148,8 @@ export async function translate(
 ): Promise<string> {
   return askGemini(
     [
-      {
-        text: `Translate the following text into ${LANGUAGES[language]}.
+    {
+      text: `Translate the following text into ${LANGUAGES[language]}.
 Rules:
 - Keep one line of translation for each line of the original.
 - Output only the translation: no title, no comment, no explanation.
@@ -215,10 +181,7 @@ Text:
 `;
 
 // Relit le texte et renvoie les mots probablement faux, avec une correction proposée.
-export async function checkText(
-  text: string,
-  version: Version,
-): Promise<Issue[]> {
+export async function checkText(text: string, version: Version): Promise<Issue[]> {
   const answer = await askGemini([{ text: CHECK_RULES + text }], version, true);
   const cleaned = answer.replace(/^```(?:json)?\s*|\s*```$/g, "");
   const parsed: unknown = JSON.parse(cleaned);
@@ -236,10 +199,7 @@ export async function checkText(
       suggestions: [
         ...new Set(
           item.suggestions
-            .filter(
-              (word): word is string =>
-                typeof word === "string" && word.trim() !== "",
-            )
+            .filter((word): word is string => typeof word === "string" && word.trim() !== "")
             .map((word) => word.trim()),
         ),
       ].slice(0, 4),
@@ -256,23 +216,14 @@ Never add a verse number, a hadith reference or a scholar's name.
 `;
 
 // Propose des corrections pour un mot choisi par l'utilisateur, d'après la phrase autour.
-export async function suggestWord(
-  word: string,
-  context: string,
-  version: Version,
-): Promise<Issue> {
+export async function suggestWord(word: string, context: string, version: Version): Promise<Issue> {
   const prompt = `${SUGGEST_RULES}\nSentence: ${context}\nWord: ${word}`;
   const answer = await askGemini([{ text: prompt }], version, true);
-  const parsed: unknown = JSON.parse(
-    answer.replace(/^```(?:json)?\s*|\s*```$/g, ""),
-  );
+  const parsed: unknown = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
   const data = (parsed ?? {}) as { suggestions?: unknown; reason?: unknown };
   const suggestions = Array.isArray(data.suggestions)
     ? data.suggestions
-        .filter(
-          (choice): choice is string =>
-            typeof choice === "string" && choice.trim() !== "",
-        )
+        .filter((choice): choice is string => typeof choice === "string" && choice.trim() !== "")
         .map((choice) => choice.trim())
     : [];
   return {

@@ -36,9 +36,7 @@ function toMono(buffer: AudioBuffer): Float32Array {
 function toWav(samples: Float32Array): Blob {
   const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
   const writeText = (offset: number, text: string) =>
-    [...text].forEach((char, i) =>
-      view.setUint8(offset + i, char.charCodeAt(0)),
-    );
+    [...text].forEach((char, i) => view.setUint8(offset + i, char.charCodeAt(0)));
 
   writeText(0, "RIFF");
   view.setUint32(4, 36 + samples.length * 2, true);

@@ -35,15 +35,12 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family:
-    var(--font-geist-sans), var(--font-arabic), Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), var(--font-arabic), Arial, Helvetica, sans-serif;
 }
 
 /* Lignes en arabe : police arabe (Amiri), plus grande pour bien lire les harakat. */
 .font-arabic {
-  font-family:
-    var(--font-arabic), var(--font-arabic-fallback), var(--font-geist-sans),
-    serif;
+  font-family: var(--font-arabic), var(--font-arabic-fallback), var(--font-geist-sans), serif;
 }
 
 /* Motif géométrique discret (étoiles à huit branches) pour l'en-tête. */
