@@ -9,15 +9,24 @@ const MAX_CHUNK_BYTES = 3.8 * 1024 * 1024;
 export type PdfChunk = { blob: Blob; firstPage: number; lastPage: number };
 
 export function isPdf(file: File): boolean {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  return (
+    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+  );
 }
 
 // Erreur levée quand une seule page dépasse la limite d'envoi (scan très lourd).
 export class PageTooLargeError extends Error {}
 
-async function extract(source: PDFDocument, first: number, last: number): Promise<Blob> {
+async function extract(
+  source: PDFDocument,
+  first: number,
+  last: number,
+): Promise<Blob> {
   const document = await PDFDocument.create();
-  const indices = Array.from({ length: last - first + 1 }, (_, i) => first - 1 + i);
+  const indices = Array.from(
+    { length: last - first + 1 },
+    (_, i) => first - 1 + i,
+  );
   const pages = await document.copyPages(source, indices);
   pages.forEach((page) => document.addPage(page));
   const bytes = await document.save();
@@ -25,7 +34,9 @@ async function extract(source: PDFDocument, first: number, last: number): Promis
 }
 
 export async function splitPdf(file: File): Promise<PdfChunk[]> {
-  const source = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+  const source = await PDFDocument.load(await file.arrayBuffer(), {
+    ignoreEncryption: true,
+  });
   const total = source.getPageCount();
   const chunks: PdfChunk[] = [];
 
@@ -39,7 +50,8 @@ export async function splitPdf(file: File): Promise<PdfChunk[]> {
     // Paquet trop lourd (pages scannées) : on envoie ces pages une par une.
     for (let page = first; page <= last; page++) {
       const single = await extract(source, page, page);
-      if (single.size > MAX_CHUNK_BYTES) throw new PageTooLargeError(`page ${page}`);
+      if (single.size > MAX_CHUNK_BYTES)
+        throw new PageTooLargeError(`page ${page}`);
       chunks.push({ blob: single, firstPage: page, lastPage: page });
     }
   }

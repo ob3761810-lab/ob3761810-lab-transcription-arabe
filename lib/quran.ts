@@ -25,22 +25,120 @@ export const SETTINGS = {
 
 // Noms des sourates, dans l'ordre.
 const SURAH_NAMES = [
-  "Al-Fatiha", "Al-Baqara", "Al Imran", "An-Nisa", "Al-Ma'ida", "Al-An'am", "Al-A'raf",
-  "Al-Anfal", "At-Tawba", "Yunus", "Hud", "Yusuf", "Ar-Ra'd", "Ibrahim", "Al-Hijr", "An-Nahl",
-  "Al-Isra", "Al-Kahf", "Maryam", "Ta-Ha", "Al-Anbiya", "Al-Hajj", "Al-Mu'minun", "An-Nur",
-  "Al-Furqan", "Ash-Shu'ara", "An-Naml", "Al-Qasas", "Al-Ankabut", "Ar-Rum", "Luqman",
-  "As-Sajda", "Al-Ahzab", "Saba", "Fatir", "Ya-Sin", "As-Saffat", "Sad", "Az-Zumar", "Ghafir",
-  "Fussilat", "Ash-Shura", "Az-Zukhruf", "Ad-Dukhan", "Al-Jathiya", "Al-Ahqaf", "Muhammad",
-  "Al-Fath", "Al-Hujurat", "Qaf", "Adh-Dhariyat", "At-Tur", "An-Najm", "Al-Qamar", "Ar-Rahman",
-  "Al-Waqi'a", "Al-Hadid", "Al-Mujadila", "Al-Hashr", "Al-Mumtahana", "As-Saff", "Al-Jumu'a",
-  "Al-Munafiqun", "At-Taghabun", "At-Talaq", "At-Tahrim", "Al-Mulk", "Al-Qalam", "Al-Haqqa",
-  "Al-Ma'arij", "Nuh", "Al-Jinn", "Al-Muzzammil", "Al-Muddaththir", "Al-Qiyama", "Al-Insan",
-  "Al-Mursalat", "An-Naba", "An-Nazi'at", "Abasa", "At-Takwir", "Al-Infitar", "Al-Mutaffifin",
-  "Al-Inshiqaq", "Al-Buruj", "At-Tariq", "Al-A'la", "Al-Ghashiya", "Al-Fajr", "Al-Balad",
-  "Ash-Shams", "Al-Layl", "Ad-Duha", "Ash-Sharh", "At-Tin", "Al-Alaq", "Al-Qadr", "Al-Bayyina",
-  "Az-Zalzala", "Al-Adiyat", "Al-Qari'a", "At-Takathur", "Al-Asr", "Al-Humaza", "Al-Fil",
-  "Quraysh", "Al-Ma'un", "Al-Kawthar", "Al-Kafirun", "An-Nasr", "Al-Masad", "Al-Ikhlas",
-  "Al-Falaq", "An-Nas",
+  "Al-Fatiha",
+  "Al-Baqara",
+  "Al Imran",
+  "An-Nisa",
+  "Al-Ma'ida",
+  "Al-An'am",
+  "Al-A'raf",
+  "Al-Anfal",
+  "At-Tawba",
+  "Yunus",
+  "Hud",
+  "Yusuf",
+  "Ar-Ra'd",
+  "Ibrahim",
+  "Al-Hijr",
+  "An-Nahl",
+  "Al-Isra",
+  "Al-Kahf",
+  "Maryam",
+  "Ta-Ha",
+  "Al-Anbiya",
+  "Al-Hajj",
+  "Al-Mu'minun",
+  "An-Nur",
+  "Al-Furqan",
+  "Ash-Shu'ara",
+  "An-Naml",
+  "Al-Qasas",
+  "Al-Ankabut",
+  "Ar-Rum",
+  "Luqman",
+  "As-Sajda",
+  "Al-Ahzab",
+  "Saba",
+  "Fatir",
+  "Ya-Sin",
+  "As-Saffat",
+  "Sad",
+  "Az-Zumar",
+  "Ghafir",
+  "Fussilat",
+  "Ash-Shura",
+  "Az-Zukhruf",
+  "Ad-Dukhan",
+  "Al-Jathiya",
+  "Al-Ahqaf",
+  "Muhammad",
+  "Al-Fath",
+  "Al-Hujurat",
+  "Qaf",
+  "Adh-Dhariyat",
+  "At-Tur",
+  "An-Najm",
+  "Al-Qamar",
+  "Ar-Rahman",
+  "Al-Waqi'a",
+  "Al-Hadid",
+  "Al-Mujadila",
+  "Al-Hashr",
+  "Al-Mumtahana",
+  "As-Saff",
+  "Al-Jumu'a",
+  "Al-Munafiqun",
+  "At-Taghabun",
+  "At-Talaq",
+  "At-Tahrim",
+  "Al-Mulk",
+  "Al-Qalam",
+  "Al-Haqqa",
+  "Al-Ma'arij",
+  "Nuh",
+  "Al-Jinn",
+  "Al-Muzzammil",
+  "Al-Muddaththir",
+  "Al-Qiyama",
+  "Al-Insan",
+  "Al-Mursalat",
+  "An-Naba",
+  "An-Nazi'at",
+  "Abasa",
+  "At-Takwir",
+  "Al-Infitar",
+  "Al-Mutaffifin",
+  "Al-Inshiqaq",
+  "Al-Buruj",
+  "At-Tariq",
+  "Al-A'la",
+  "Al-Ghashiya",
+  "Al-Fajr",
+  "Al-Balad",
+  "Ash-Shams",
+  "Al-Layl",
+  "Ad-Duha",
+  "Ash-Sharh",
+  "At-Tin",
+  "Al-Alaq",
+  "Al-Qadr",
+  "Al-Bayyina",
+  "Az-Zalzala",
+  "Al-Adiyat",
+  "Al-Qari'a",
+  "At-Takathur",
+  "Al-Asr",
+  "Al-Humaza",
+  "Al-Fil",
+  "Quraysh",
+  "Al-Ma'un",
+  "Al-Kawthar",
+  "Al-Kafirun",
+  "An-Nasr",
+  "Al-Masad",
+  "Al-Ikhlas",
+  "Al-Falaq",
+  "An-Nas",
 ];
 
 // Isti'adha : formule dite avant la récitation, ce n'est pas un verset (pas de référence).
@@ -76,7 +174,12 @@ type Word = {
   basmala: boolean; // fait partie de la basmala placée en tête du verset 1 d'une sourate
 };
 
-type Verse = { surah: number; ayah: number; words: number; basmalaWords: number };
+type Verse = {
+  surah: number;
+  ayah: number;
+  words: number;
+  basmalaWords: number;
+};
 
 type Corpus = {
   words: Word[];
@@ -91,7 +194,10 @@ const BASMALA_NORM = ["بسم", "الله", "الرحمن", "الرحيم"];
 // Charge le fichier Tanzil une seule fois, puis le garde en mémoire.
 function loadCorpus(): Corpus {
   if (corpus) return corpus;
-  const file = readFileSync(join(process.cwd(), "data", "quran-simple.txt"), "utf8");
+  const file = readFileSync(
+    join(process.cwd(), "data", "quran-simple.txt"),
+    "utf8",
+  );
   const words: Word[] = [];
   const verses: Verse[] = [];
 
@@ -182,7 +288,12 @@ function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   for (const match of text.matchAll(ARABIC_WORD)) {
     const norm = normalize(match[0]);
-    if (norm) tokens.push({ norm, start: match.index, end: match.index + match[0].length });
+    if (norm)
+      tokens.push({
+        norm,
+        start: match.index,
+        end: match.index + match[0].length,
+      });
   }
   return tokens;
 }
@@ -208,7 +319,8 @@ function extend(
 ): { t: number; q: number; exact: number; errors: number } {
   let exact = 0;
   let errors = 0;
-  const inText = (i: number) => (step === 1 ? i < tokens.length : i >= textLimit);
+  const inText = (i: number) =>
+    step === 1 ? i < tokens.length : i >= textLimit;
   const inQuran = (i: number) => i >= 0 && i < words.length;
   const same = (ti: number, qi: number) =>
     inText(ti) && inQuran(qi) && compare(tokens[ti].norm, words[qi].norm);
@@ -246,7 +358,11 @@ function extend(
 }
 
 // Meilleur alignement qui commence au mot `t` du texte (ou un peu avant, sans dépasser `floor`).
-function bestAlignmentAt(tokens: Token[], t: number, floor: number): Alignment | null {
+function bestAlignmentAt(
+  tokens: Token[],
+  t: number,
+  floor: number,
+): Alignment | null {
   const { words, trigrams } = loadCorpus();
   if (t + 2 >= tokens.length) return null;
   const key = `${tokens[t].norm} ${tokens[t + 1].norm} ${tokens[t + 2].norm}`;
@@ -264,7 +380,10 @@ function bestAlignmentAt(tokens: Token[], t: number, floor: number): Alignment |
     };
     const length = candidate.quranEnd - candidate.quranStart;
     const bestLength = best ? best.quranEnd - best.quranStart : -1;
-    if (length > bestLength || (length === bestLength && best && candidate.errors < best.errors)) {
+    if (
+      length > bestLength ||
+      (length === bestLength && best && candidate.errors < best.errors)
+    ) {
       best = candidate;
     }
   }
@@ -295,7 +414,8 @@ function reference(start: number, end: number): string {
   if (first.surah !== last.surah) {
     return `${surahName(first.surah)} ${first.ayah} – ${surahName(last.surah)} ${last.ayah}`;
   }
-  const ayahs = first.ayah === last.ayah ? `${first.ayah}` : `${first.ayah}-${last.ayah}`;
+  const ayahs =
+    first.ayah === last.ayah ? `${first.ayah}` : `${first.ayah}-${last.ayah}`;
   return `${surahName(first.surah)} ${ayahs}`;
 }
 
@@ -307,7 +427,8 @@ function fullVerses(start: number, end: number): number {
     const covered = words
       .slice(start, end + 1)
       .filter((word) => word.verse === v && !word.basmala).length;
-    if (covered === verses[v].words - verses[v].basmalaWords && covered > 0) count++;
+    if (covered === verses[v].words - verses[v].basmalaWords && covered > 0)
+      count++;
   }
   return count;
 }
@@ -330,14 +451,20 @@ function accept(alignment: Alignment): Passage | null {
     .join(" ");
 
   // Basmala seule : texte officiel, sans numéro (elle n'est numérotée que dans Al-Fatiha).
-  if (n === BASMALA_NORM.length && BASMALA_NORM.every((word, i) => words[qs + i].norm === word)) {
+  if (
+    n === BASMALA_NORM.length &&
+    BASMALA_NORM.every((word, i) => words[qs + i].norm === word)
+  ) {
     return alignment.errors === 0
       ? { start: 0, end: 0, reference: "Basmala", official }
       : null;
   }
 
   if (n < SETTINGS.minWords) return null;
-  if (alignment.exact < Math.max(SETTINGS.minWords, Math.ceil(n * SETTINGS.minExactRatio))) {
+  if (
+    alignment.exact <
+    Math.max(SETTINGS.minWords, Math.ceil(n * SETTINGS.minExactRatio))
+  ) {
     return null;
   }
   if (alignment.errors > Math.floor(n * SETTINGS.maxErrorRatio)) return null;
@@ -357,11 +484,13 @@ function accept(alignment: Alignment): Passage | null {
     if (found.some((other) => display(other) !== official)) return null;
   }
   // Texte présent à plusieurs endroits : référence du premier, avec le nombre d'autres.
-  const others = found.length > 1 ? ` (et ${found.length - 1} autre(s) endroit(s))` : "";
+  const others =
+    found.length > 1 ? ` (et ${found.length - 1} autre(s) endroit(s))` : "";
   return {
     start: 0,
     end: 0,
-    reference: reference(qs, qe) + (complete === 0 ? " (extrait)" : "") + others,
+    reference:
+      reference(qs, qe) + (complete === 0 ? " (extrait)" : "") + others,
     official,
   };
 }
@@ -370,7 +499,8 @@ function accept(alignment: Alignment): Passage | null {
 const ISTIADHA_NORM = ["اعوذ", "بالله", "من", "الشيطان", "الرجيم"];
 function istiadhaAt(tokens: Token[], t: number): boolean {
   return ISTIADHA_NORM.every(
-    (word, i) => tokens[t + i] && compare(tokens[t + i].norm, word) !== "different",
+    (word, i) =>
+      tokens[t + i] && compare(tokens[t + i].norm, word) !== "different",
   );
 }
 
@@ -408,7 +538,11 @@ export function findPassages(text: string): Passage[] {
 }
 
 // Caractères interdits à l'intérieur d'un passage marqué.
-const clean = (value: string) => value.replace(/[⟦⟧⟨⟩⟪⟫|\n]/g, " ").replace(/\s+/g, " ").trim();
+const clean = (value: string) =>
+  value
+    .replace(/[⟦⟧⟨⟩⟪⟫|\n]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 // Remplace chaque passage coranique par le texte officiel, marqué avec sa référence.
 // Le reste du texte n'est pas modifié.

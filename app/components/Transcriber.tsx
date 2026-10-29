@@ -3,7 +3,14 @@
 // Toute l'application : choisir un fichier, obtenir le texte avec les harakat,
 // le traduire, puis le télécharger en PDF.
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
 import { isPdf, PageTooLargeError, splitPdf } from "@/lib/pdf";
 import type { Issue, Version } from "@/lib/gemini";
@@ -52,7 +59,8 @@ type Editing = {
   value: string;
 };
 
-const wait = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+const wait = (seconds: number) =>
+  new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
 // Phrase en français contenant des mots arabes : chaque passage arabe est isolé
 // pour s'afficher dans le bon ordre.
@@ -60,7 +68,9 @@ function MixedText({ text }: { text: string }) {
   return (
     <>
       {text
-        .split(/([\u0600-\u06FF][\u0600-\u06FF\s]*[\u0600-\u06FF]|[\u0600-\u06FF])/)
+        .split(
+          /([\u0600-\u06FF][\u0600-\u06FF\s]*[\u0600-\u06FF]|[\u0600-\u06FF])/,
+        )
         .map((piece, index) =>
           index % 2 === 1 ? (
             <bdi key={index} dir="rtl" className="font-arabic">
@@ -75,7 +85,15 @@ function MixedText({ text }: { text: string }) {
 }
 
 // Passage coranique par défaut (traduction, aperçu) : texte officiel suivi de sa référence.
-function DefaultQuran({ text, on, reference }: { text: string; on: boolean; reference: string }) {
+function DefaultQuran({
+  text,
+  on,
+  reference,
+}: {
+  text: string;
+  on: boolean;
+  reference: string;
+}) {
   if (!on) return text;
   return (
     <>
@@ -102,7 +120,11 @@ function Lines({
 }: {
   text: string;
   show?: (value: string) => string;
-  renderMark?: (n: number, word: string, kind: "doubt" | "fixed") => React.ReactNode;
+  renderMark?: (
+    n: number,
+    word: string,
+    kind: "doubt" | "fixed",
+  ) => React.ReactNode;
   renderQuran?: (
     n: number,
     passage: { text: string; on: boolean; reference: string },
@@ -127,23 +149,33 @@ function Lines({
           if (segment.kind === "quran") {
             return (
               <span key={i}>
-                {renderQuran(quranNumber++, { ...segment, text: show(segment.text) })}
+                {renderQuran(quranNumber++, {
+                  ...segment,
+                  text: show(segment.text),
+                })}
               </span>
             );
           }
           if (segment.kind !== "normal") {
             return (
-              <span key={i}>{renderMark(markNumber++, show(segment.text), segment.kind)}</span>
+              <span key={i}>
+                {renderMark(markNumber++, show(segment.text), segment.kind)}
+              </span>
             );
           }
-          if (!renderWord) return <Fragment key={i}>{show(segment.text)}</Fragment>;
+          if (!renderWord)
+            return <Fragment key={i}>{show(segment.text)}</Fragment>;
           return (
             <Fragment key={i}>
               {splitWords(segment.text).map((piece) => {
                 const start = lineStart + segment.start + piece.start;
                 return piece.word ? (
                   <Fragment key={piece.start}>
-                    {renderWord(start, start + piece.text.length, show(piece.text))}
+                    {renderWord(
+                      start,
+                      start + piece.text.length,
+                      show(piece.text),
+                    )}
                   </Fragment>
                 ) : (
                   show(piece.text)
@@ -153,7 +185,11 @@ function Lines({
           );
         });
         return isArabic(line) ? (
-          <p key={index} dir="rtl" className="font-arabic text-2xl leading-[2.2]">
+          <p
+            key={index}
+            dir="rtl"
+            className="font-arabic text-2xl leading-[2.2]"
+          >
             {content}
           </p>
         ) : (
@@ -176,7 +212,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [parts, setParts] = useState<string[]>([]);
   // Pour chaque partie : vrai si elle a été transcrite par le modèle de secours (plus léger).
   const [liteParts, setLiteParts] = useState<boolean[]>([]);
-  const [translation, setTranslation] = useState<{ label: string; text: string } | null>(null);
+  const [translation, setTranslation] = useState<{
+    label: string;
+    text: string;
+  } | null>(null);
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState("");
   // Choix d'affichage : avec ou sans harakat (le PDF suit ce choix).
@@ -206,7 +245,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     { step: "idle" } | { step: "loading" } | { step: "error"; message: string }
   >({ step: "idle" });
   // Passage coranique dont la fenêtre (référence, annuler) est ouverte.
-  const [openQuran, setOpenQuran] = useState<{ part: number; n: number } | null>(null);
+  const [openQuran, setOpenQuran] = useState<{
+    part: number;
+    n: number;
+  } | null>(null);
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
   const chunks = useRef<Blob[]>([]);
   // Pour un PDF : pages contenues dans chaque extrait (null pour un audio ou une vidéo).
@@ -229,7 +271,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         playback.current = null;
       }
     } else if (player.current) {
-      playback.current = { time: player.current.currentTime, playing: !player.current.paused };
+      playback.current = {
+        time: player.current.currentTime,
+        playing: !player.current.paused,
+      };
       player.current = null;
     }
   }, []);
@@ -242,7 +287,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
   // Adresse locale du fichier choisi, pour l'écouter ou le regarder dans la page.
   // Le fichier reste sur l'appareil : rien n'est envoyé.
-  const mediaUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  const mediaUrl = useMemo(
+    () => (file ? URL.createObjectURL(file) : null),
+    [file],
+  );
   useEffect(() => {
     return () => {
       if (mediaUrl) URL.revokeObjectURL(mediaUrl);
@@ -261,8 +309,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   if (!ready) {
     return (
       <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
-        L&apos;application n&apos;est pas encore activée : la clé Google Gemini n&apos;a pas été
-        ajoutée.
+        L&apos;application n&apos;est pas encore activée : la clé Google Gemini
+        n&apos;a pas été ajoutée.
       </p>
     );
   }
@@ -278,10 +326,13 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       const used = versionRef.current;
       const pages = pageRanges.current?.[part - 1];
       const pageQuery = pages ? `&first=${pages.first}&last=${pages.last}` : "";
-      const response = await fetch(`/api/transcribe?version=${used}${pageQuery}`, {
-        method: "POST",
-        body: chunk,
-      });
+      const response = await fetch(
+        `/api/transcribe?version=${used}${pageQuery}`,
+        {
+          method: "POST",
+          body: chunk,
+        },
+      );
       if (response.ok) return response.json();
       const retryable = response.status === 429 || response.status === 503;
       if (!retryable || attempt === MAX_RETRIES) {
@@ -290,7 +341,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       const reason = response.status === 429 ? "limite" : "surcharge";
       setStatus({ step: "transcribing", part, total, waiting: reason });
       // On attend avant de réessayer, sauf si l'utilisateur change de version entre-temps.
-      for (let second = 0; second < RETRY_SECONDS && versionRef.current === used; second++) {
+      for (
+        let second = 0;
+        second < RETRY_SECONDS && versionRef.current === used;
+        second++
+      ) {
         await wait(1);
       }
       setStatus({ step: "transcribing", part, total, waiting: null });
@@ -305,7 +360,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     try {
       for (let i = nextPart.current; i < total; i++) {
         setStatus({ step: "transcribing", part: i + 1, total, waiting: null });
-        const { text: partText, lite } = await transcribePart(chunks.current[i], i + 1, total);
+        const { text: partText, lite } = await transcribePart(
+          chunks.current[i],
+          i + 1,
+          total,
+        );
         collected[i] = partText;
         setParts((previous) => [...previous.slice(0, i), partText]);
         setLiteParts((previous) => [...previous.slice(0, i), lite]);
@@ -348,7 +407,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         );
         pageRanges.current = null;
         setSectionLabels(
-          pieces.length > 1 ? pieces.map((_, index) => `Partie ${index + 1}`) : [""],
+          pieces.length > 1
+            ? pieces.map((_, index) => `Partie ${index + 1}`)
+            : [""],
         );
       } else if (file && isPdf(file)) {
         const pdfChunks = await splitPdf(file);
@@ -359,13 +420,17 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         }));
         setSectionLabels(
           pdfChunks.map(({ firstPage, lastPage }) =>
-            firstPage === lastPage ? `Page ${firstPage}` : `Pages ${firstPage} à ${lastPage}`,
+            firstPage === lastPage
+              ? `Page ${firstPage}`
+              : `Pages ${firstPage} à ${lastPage}`,
           ),
         );
       } else if (file) {
         chunks.current = await splitIntoWavChunks(file);
         pageRanges.current = null;
-        setSectionLabels(chunks.current.map((_, index) => formatTime(index * CHUNK_SECONDS)));
+        setSectionLabels(
+          chunks.current.map((_, index) => formatTime(index * CHUNK_SECONDS)),
+        );
       }
       nextPart.current = 0;
     } catch (error) {
@@ -400,7 +465,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     try {
       // Les mots déjà signalés pendant la transcription sont envoyés avec leurs marques ⟦ ⟧,
       // pour recevoir eux aussi des propositions de correction.
-      const plain = removeFixedMarks(texts.filter((text) => text.trim() !== "").join("\n"));
+      const plain = removeFixedMarks(
+        texts.filter((text) => text.trim() !== "").join("\n"),
+      );
       const response = await fetch("/api/check", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -426,7 +493,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       console.error(error);
       setCheck({
         step: "error",
-        message: "La relecture n'a pas pu être réalisée. Réessayez dans un instant.",
+        message:
+          "La relecture n'a pas pu être réalisée. Réessayez dans un instant.",
       });
     }
   }
@@ -440,7 +508,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   }
 
   // Ouvre la fenêtre de correction pour un mot marqué (numéro n) ou un mot ordinaire (position).
-  function startEditing(part: number, target: Editing["target"], value: string) {
+  function startEditing(
+    part: number,
+    target: Editing["target"],
+    value: string,
+  ) {
     setEditing({ part, target, value });
     setSuggesting({ step: "idle" });
   }
@@ -502,10 +574,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           ...previous,
           [word]: {
             word,
-            suggestions: [...new Set([...issue.suggestions, ...(known?.suggestions ?? [])])].slice(
-              0,
-              6,
-            ),
+            suggestions: [
+              ...new Set([...issue.suggestions, ...(known?.suggestions ?? [])]),
+            ].slice(0, 6),
             reason: issue.reason || known?.reason || "",
           },
         };
@@ -513,13 +584,17 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       setSuggesting(
         issue.suggestions.length > 0
           ? { step: "idle" }
-          : { step: "error", message: "Aucune proposition : écrivez votre correction." },
+          : {
+              step: "error",
+              message: "Aucune proposition : écrivez votre correction.",
+            },
       );
     } catch (error) {
       console.error(error);
       setSuggesting({
         step: "error",
-        message: "Les propositions n'ont pas pu être obtenues. Écrivez votre correction.",
+        message:
+          "Les propositions n'ont pas pu être obtenues. Écrivez votre correction.",
       });
     }
   }
@@ -537,7 +612,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           </span>
         )}
         {known && known.suggestions.length > 0 && (
-          <span dir="ltr" className="flex flex-wrap items-center gap-2 text-left text-sm">
+          <span
+            dir="ltr"
+            className="flex flex-wrap items-center gap-2 text-left text-sm"
+          >
             <span className="text-stone-600">Mots proposés :</span>
             {known.suggestions.map((choice) => (
               <button
@@ -551,7 +629,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
             ))}
           </span>
         )}
-        <span dir="ltr" className="flex flex-wrap items-center gap-2 text-left text-sm">
+        <span
+          dir="ltr"
+          className="flex flex-wrap items-center gap-2 text-left text-sm"
+        >
           {suggesting.step === "loading" ? (
             <span className="text-stone-600">Recherche de propositions…</span>
           ) : (
@@ -560,7 +641,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               onClick={askSuggestions}
               className="rounded border border-gold-400 bg-gold-100 px-3 py-1 text-gold-700 hover:bg-gold-200"
             >
-              ✨ {known && known.suggestions.length > 0 ? "Autres propositions" : "Proposer des corrections"}
+              ✨{" "}
+              {known && known.suggestions.length > 0
+                ? "Autres propositions"
+                : "Proposer des corrections"}
             </button>
           )}
           {suggesting.step === "error" && (
@@ -569,13 +653,17 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         </span>
         <span dir="ltr" className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-stone-600">
-            {known && known.suggestions.length > 0 ? "Ou écrivez :" : "Votre correction :"}
+            {known && known.suggestions.length > 0
+              ? "Ou écrivez :"
+              : "Votre correction :"}
           </span>
           <input
             dir="auto"
             autoFocus
             value={editing.value}
-            onChange={(event) => setEditing({ ...editing, value: event.target.value })}
+            onChange={(event) =>
+              setEditing({ ...editing, value: event.target.value })
+            }
             onKeyDown={(event) => {
               if (event.key === "Enter") confirmWord(editing.value);
               if (event.key === "Escape") setEditing(null);
@@ -598,7 +686,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               C&apos;est juste
             </button>
           )}
-          <button type="button" onClick={() => setEditing(null)} className="px-2 py-1 text-stone-500">
+          <button
+            type="button"
+            onClick={() => setEditing(null)}
+            className="px-2 py-1 text-stone-500"
+          >
             Annuler
           </button>
         </span>
@@ -609,8 +701,16 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   // Mot marqué : en rouge (à vérifier) ou souligné en vert (corrigé), cliquable ;
   // ou fenêtre de correction s'il est en cours de correction.
   function renderMark(part: number) {
-    return function MarkedWord(n: number, word: string, kind: "doubt" | "fixed") {
-      if (editing?.part === part && "n" in editing.target && editing.target.n === n) {
+    return function MarkedWord(
+      n: number,
+      word: string,
+      kind: "doubt" | "fixed",
+    ) {
+      if (
+        editing?.part === part &&
+        "n" in editing.target &&
+        editing.target.n === n
+      ) {
         return correctionPanel(kind);
       }
       return (
@@ -638,7 +738,12 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   function renderWord(part: number) {
     return function PlainWord(start: number, end: number, word: string) {
       const target = editing?.target;
-      if (editing?.part === part && target && "start" in target && target.start === start) {
+      if (
+        editing?.part === part &&
+        target &&
+        "start" in target &&
+        target.start === start
+      ) {
         return correctionPanel("plain");
       }
       return (
@@ -646,7 +751,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
           role="button"
           tabIndex={-1}
           title="Cliquez pour corriger ce mot"
-          onClick={() => startEditing(part, { start, end }, parts[part].slice(start, end))}
+          onClick={() =>
+            startEditing(part, { start, end }, parts[part].slice(start, end))
+          }
           className="cursor-pointer rounded hover:bg-gold-100"
         >
           {word}
@@ -682,7 +789,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
             {passage.on ? (
               <>
                 {quranBrackets(passage.text, passage.reference)}{" "}
-                <bdi dir="ltr" className="font-sans text-sm whitespace-nowrap text-gold-700">
+                <bdi
+                  dir="ltr"
+                  className="font-sans text-sm whitespace-nowrap text-gold-700"
+                >
                   <span className="no-print" aria-hidden>
                     📖{" "}
                   </span>
@@ -708,7 +818,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   type="button"
                   onClick={() => {
                     setParts((previous) =>
-                      previous.map((text, index) => (index === part ? toggleQuran(text, n) : text)),
+                      previous.map((text, index) =>
+                        index === part ? toggleQuran(text, n) : text,
+                      ),
                     );
                     setOpenQuran(null);
                   }}
@@ -739,7 +851,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
 
   // Télécharge le même contenu que le PDF au format Word (.docx), modifiable.
   async function handleWordDownload() {
-    const baseName = textMode || !file ? "texte" : file.name.replace(/\.[^.]+$/, "");
+    const baseName =
+      textMode || !file ? "texte" : file.name.replace(/\.[^.]+$/, "");
     setWordError("");
     try {
       // La bibliothèque Word n'est chargée qu'au moment du clic, pour garder la page légère.
@@ -748,11 +861,17 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         fileName: textMode || !file ? "Texte collé" : file.name,
         sections: parts
           .map((text, index) => ({
-            time: pdfMode && text.includes("— Page") ? "" : (sectionLabels[index] ?? ""),
+            time:
+              pdfMode && text.includes("— Page")
+                ? ""
+                : (sectionLabels[index] ?? ""),
             text: shown(text),
           }))
           .filter((section) => section.text.trim() !== ""),
-        translation: translation && { label: translation.label, text: shown(translation.text) },
+        translation: translation && {
+          label: translation.label,
+          text: shown(translation.text),
+        },
       });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -761,7 +880,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       URL.revokeObjectURL(link.href);
     } catch (error) {
       console.error(error);
-      setWordError("Le fichier Word n'a pas pu être créé. Réessayez dans un instant.");
+      setWordError(
+        "Le fichier Word n'a pas pu être créé. Réessayez dans un instant.",
+      );
     }
   }
 
@@ -786,7 +907,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       setTranslation({ label, text: removeMarks(data.text) });
     } catch (error) {
       console.error(error);
-      setTranslationError("La traduction n'a pas pu être réalisée. Réessayez dans un instant.");
+      setTranslationError(
+        "La traduction n'a pas pu être réalisée. Réessayez dans un instant.",
+      );
     } finally {
       setTranslating(false);
     }
@@ -804,13 +927,21 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         className={`w-full rounded-xl bg-black ${compact ? "max-h-72" : "max-h-64 lg:max-h-[75vh]"}`}
       />
     ) : (
-      <audio ref={attachPlayer} src={mediaUrl ?? undefined} controls className="w-full" />
+      <audio
+        ref={attachPlayer}
+        src={mediaUrl ?? undefined}
+        controls
+        className="w-full"
+      />
     );
   }
 
   return (
     <div>
-      <form onSubmit={handleTranscribe} className="no-print mx-auto max-w-3xl space-y-4">
+      <form
+        onSubmit={handleTranscribe}
+        className="no-print mx-auto max-w-3xl space-y-4"
+      >
         <div className="inline-flex rounded-xl border border-gold-200 bg-paper p-1">
           {(
             [
@@ -827,7 +958,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                 setStatus({ step: "idle" });
               }}
               className={`rounded-md px-4 py-1.5 text-sm font-medium ${
-                source === value ? "bg-brand-700 text-white" : "text-stone-700 hover:bg-stone-100"
+                source === value
+                  ? "bg-brand-700 text-white"
+                  : "text-stone-700 hover:bg-stone-100"
               }`}
             >
               {label}
@@ -864,11 +997,15 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               <path d="M12 16V4m0 0l-4.5 4.5M12 4l4.5 4.5" />
               <path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" />
             </svg>
-            <span dir="auto" className="block text-lg font-medium text-stone-800">
+            <span
+              dir="auto"
+              className="block text-lg font-medium text-stone-800"
+            >
               {file ? file.name : "Choisir un fichier audio, vidéo ou PDF"}
             </span>
             <span className="mt-1 block text-sm text-stone-500">
-              MP3, WAV, M4A, MP4, MOV… pour transcrire ; PDF pour ajouter les harakat à un texte
+              MP3, WAV, M4A, MP4, MOV… pour transcrire ; PDF pour ajouter les
+              harakat à un texte
             </span>
             <input
               type="file"
@@ -886,7 +1023,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         {showPlayer && !sideBySide && renderPlayer(true)}
 
         <fieldset className="rounded-2xl border border-gold-200 bg-paper px-4 py-3">
-          <legend className="px-1 text-sm font-medium text-stone-700">Version</legend>
+          <legend className="px-1 text-sm font-medium text-stone-700">
+            Version
+          </legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {(
               [
@@ -901,7 +1040,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               <label
                 key={value}
                 className={`flex cursor-pointer gap-2 rounded-lg border px-3 py-2 ${
-                  version === value ? "border-brand-600 bg-brand-50" : "border-stone-200"
+                  version === value
+                    ? "border-brand-600 bg-brand-50"
+                    : "border-stone-200"
                 }`}
               >
                 <input
@@ -913,7 +1054,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   className="mt-1"
                 />
                 <span>
-                  <span className="block font-medium text-stone-900">{label}</span>
+                  <span className="block font-medium text-stone-900">
+                    {label}
+                  </span>
                   <span className="block text-sm text-stone-600">{help}</span>
                 </span>
               </label>
@@ -1015,18 +1158,22 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                 </p>
               )}
               <p className="mt-1 text-sm text-amber-700">
-                Texte non relu : il peut contenir des erreurs de transcription ou de harakat.
+                Texte non relu : il peut contenir des erreurs de transcription
+                ou de harakat.
               </p>
               {check.step === "checking" && (
                 <p className="no-print mt-3 text-sm text-stone-700">
                   Relecture de l&apos;orthographe et des harakat en cours…
                 </p>
               )}
-              {check.step === "done" && check.found === 0 && doubtCount === 0 && (
-                <p className="no-print mt-3 text-sm text-brand-700">
-                  Relecture terminée : aucun mot signalé (une relecture humaine reste conseillée).
-                </p>
-              )}
+              {check.step === "done" &&
+                check.found === 0 &&
+                doubtCount === 0 && (
+                  <p className="no-print mt-3 text-sm text-brand-700">
+                    Relecture terminée : aucun mot signalé (une relecture
+                    humaine reste conseillée).
+                  </p>
+                )}
               {check.step === "error" && (
                 <div className="no-print mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
                   {check.message}{" "}
@@ -1041,7 +1188,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
               )}
               {doubtCount > 0 && (
                 <p className="hidden text-sm text-red-600 print:block">
-                  En rouge : mots dont l&apos;orthographe ou les harakat sont à vérifier.
+                  En rouge : mots dont l&apos;orthographe ou les harakat sont à
+                  vérifier.
                 </p>
               )}
               {doubtCount > 0 && (
@@ -1049,18 +1197,21 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   {doubtCount === 1
                     ? "1 mot à vérifier est en rouge"
                     : `${doubtCount} mots à vérifier sont en rouge`}{" "}
-                  : cliquez dessus pour choisir un mot proposé ou écrire votre correction. Ils
-                  restent en rouge dans le PDF et le Word tant qu&apos;ils ne sont pas vérifiés. Les
-                  mots corrigés sont soulignés en vert : cliquez dessus pour les modifier à nouveau.
+                  : cliquez dessus pour choisir un mot proposé ou écrire votre
+                  correction. Ils restent en rouge dans le PDF et le Word tant
+                  qu&apos;ils ne sont pas vérifiés. Les mots corrigés sont
+                  soulignés en vert : cliquez dessus pour les modifier à
+                  nouveau.
                 </p>
               )}
               {hasQuran && (
                 <p className="mt-3 rounded-lg border border-gold-200 bg-gold-100/50 px-4 py-2 text-sm text-stone-800">
-                  Les versets du Coran reconnus sont remplacés par le texte officiel (Tanzil), sur fond doré, avec leur référence.
+                  Les versets du Coran reconnus sont remplacés par le texte
+                  officiel (Tanzil), sur fond doré, avec leur référence.
                   <span className="no-print">
                     {" "}
-                    Cliquez sur un verset pour annuler le remplacement si ce n&apos;est pas un
-                    verset.
+                    Cliquez sur un verset pour annuler le remplacement si ce
+                    n&apos;est pas un verset.
                   </span>
                 </p>
               )}
@@ -1149,7 +1300,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                     </button>
                   ))}
                 </div>
-                {translating && <p className="mt-2 text-stone-700">Traduction en cours…</p>}
+                {translating && (
+                  <p className="mt-2 text-stone-700">Traduction en cours…</p>
+                )}
                 {translationError && (
                   <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
                     {translationError}
@@ -1175,9 +1328,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   </button>
                 </div>
                 <p className="mt-2 text-sm text-stone-500">
-                  PDF : dans la fenêtre qui s&apos;ouvre, choisissez « Enregistrer au format PDF »
-                  comme imprimante. Word : le fichier se télécharge directement et peut être
-                  modifié.
+                  PDF : dans la fenêtre qui s&apos;ouvre, choisissez «
+                  Enregistrer au format PDF » comme imprimante. Word : le
+                  fichier se télécharge directement et peut être modifié.
                 </p>
                 {wordError && (
                   <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">

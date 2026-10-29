@@ -5,7 +5,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { findPassages, replaceQuranPassages } from "../lib/quran.ts";
-import { removeFixedMarks, removeMarks, splitMarks, toggleQuran, markWord } from "../lib/text.ts";
+import {
+  removeFixedMarks,
+  removeMarks,
+  splitMarks,
+  toggleQuran,
+  markWord,
+} from "../lib/text.ts";
 
 // Texte officiel d'un verset, lu directement dans le fichier Tanzil.
 const tanzil = new Map(
@@ -22,7 +28,11 @@ const verse = (surah, ayah) => tanzil.get(`${surah}:${ayah}`);
 // Le seul passage trouvé dans `text` (échoue s'il y en a 0 ou plusieurs).
 function onlyPassage(text) {
   const passages = findPassages(text);
-  assert.equal(passages.length, 1, `attendu 1 passage, trouvé ${passages.length}`);
+  assert.equal(
+    passages.length,
+    1,
+    `attendu 1 passage, trouvé ${passages.length}`,
+  );
   return passages[0];
 }
 
@@ -31,7 +41,8 @@ test("le fichier Tanzil est complet (6236 versets)", () => {
 });
 
 test("verset complet : remplacé par le texte officiel avec sa référence", () => {
-  const ai = "قال الله تعالى: يا أيها الذين آمنوا كتب عليكم الصيام كما كتب على الذين من قبلكم لعلكم تتقون. وهذا في رمضان.";
+  const ai =
+    "قال الله تعالى: يا أيها الذين آمنوا كتب عليكم الصيام كما كتب على الذين من قبلكم لعلكم تتقون. وهذا في رمضان.";
   const passage = onlyPassage(ai);
   assert.equal(passage.reference, "Al-Baqara 183");
   assert.equal(passage.official, verse(2, 183));
@@ -42,7 +53,8 @@ test("verset complet : remplacé par le texte officiel avec sa référence", () 
 });
 
 test("verset partiel : marqué « extrait »", () => {
-  const ai = "واعلموا أن الله لا إله إلا هو الحي القيوم لا تأخذه سنة ولا نوم وهذا من آية الكرسي";
+  const ai =
+    "واعلموا أن الله لا إله إلا هو الحي القيوم لا تأخذه سنة ولا نوم وهذا من آية الكرسي";
   const passage = onlyPassage(ai);
   assert.equal(passage.reference, "Al-Baqara 255 (extrait)");
   assert.ok(verse(2, 255).startsWith(passage.official));
@@ -58,14 +70,19 @@ test("plusieurs versets d'affilée : une seule référence de début à fin", ()
 });
 
 test("sourate entière précédée de la basmala", () => {
-  const ai = "بسم الله الرحمن الرحيم قل هو الله أحد الله الصمد لم يلد ولم يولد ولم يكن له كفوا أحد";
+  const ai =
+    "بسم الله الرحمن الرحيم قل هو الله أحد الله الصمد لم يلد ولم يولد ولم يكن له كفوا أحد";
   const passage = onlyPassage(ai);
   assert.equal(passage.reference, "Al-Ikhlas 1-4");
-  assert.equal(passage.official, [1, 2, 3, 4].map((ayah) => verse(112, ayah)).join(" "));
+  assert.equal(
+    passage.official,
+    [1, 2, 3, 4].map((ayah) => verse(112, ayah)).join(" "),
+  );
 });
 
 test("verset avec 1 erreur de transcription (une lettre fausse) : corrigé", () => {
-  const ai = "الله لا إله إلا هو الحي القيون لا تأخذه سنة ولا نوم له ما في السماوات وما في الأرض";
+  const ai =
+    "الله لا إله إلا هو الحي القيون لا تأخذه سنة ولا نوم له ما في السماوات وما في الأرض";
   const passage = onlyPassage(ai);
   assert.equal(passage.reference, "Al-Baqara 255 (extrait)");
   // Le mot faux « القيون » est remplacé par le texte officiel (« الْقَيُّومُ »).
@@ -75,7 +92,8 @@ test("verset avec 1 erreur de transcription (une lettre fausse) : corrigé", () 
 
 test("verset avec 2 erreurs (une lettre fausse et un mot oublié) : corrigé", () => {
   // « مِن » oublié, et « تتقون » mal entendu en « تتقوم ».
-  const ai = "يا أيها الذين آمنوا كتب عليكم الصيام كما كتب على الذين قبلكم لعلكم تتقوم";
+  const ai =
+    "يا أيها الذين آمنوا كتب عليكم الصيام كما كتب على الذين قبلكم لعلكم تتقوم";
   const passage = onlyPassage(ai);
   assert.equal(passage.reference, "Al-Baqara 183");
   assert.equal(passage.official, verse(2, 183));
@@ -99,27 +117,39 @@ test("phrases ordinaires qui ressemblent à des versets : PAS remplacées", () =
 });
 
 test("texte sans aucun verset : inchangé", () => {
-  const text = "اليوم نتكلم عن منهج السلف في طلب العلم.\nAujourd'hui nous parlons de la méthode des salaf.";
+  const text =
+    "اليوم نتكلم عن منهج السلف في طلب العلم.\nAujourd'hui nous parlons de la méthode des salaf.";
   assert.deepEqual(findPassages(text), []);
   assert.equal(replaceQuranPassages(text), text);
 });
 
 test("basmala seule et isti'adha : texte officiel, sans numéro de verset", () => {
-  const result = replaceQuranPassages("أعوذ بالله من الشيطان الرجيم. بسم الله الرحمن الرحيم. نبدأ الدرس");
-  assert.ok(result.includes("⟪on|Isti'adha (formule, pas un verset)|أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ|"));
+  const result = replaceQuranPassages(
+    "أعوذ بالله من الشيطان الرجيم. بسم الله الرحمن الرحيم. نبدأ الدرس",
+  );
+  assert.ok(
+    result.includes(
+      "⟪on|Isti'adha (formule, pas un verset)|أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ|",
+    ),
+  );
   assert.ok(result.includes(`⟪on|Basmala|${verse(1, 1)}|`));
   assert.ok(result.endsWith(". نبدأ الدرس"));
 });
 
 test("annuler puis rétablir un remplacement ; exports et relecture", () => {
-  const replaced = replaceQuranPassages("قال تعالى قل هو الله أحد الله الصمد لم يلد ولم يولد ولم يكن له كفوا أحد");
+  const replaced = replaceQuranPassages(
+    "قال تعالى قل هو الله أحد الله الصمد لم يلد ولم يولد ولم يكن له كفوا أحد",
+  );
   const [, quran] = splitMarks(replaced);
   assert.equal(quran.kind, "quran");
   assert.equal(quran.on, true);
   assert.equal(quran.reference, "Al-Ikhlas 1-4");
   // Annulé : c'est le texte de l'IA qui est affiché.
   const undone = toggleQuran(replaced, 0);
-  assert.equal(splitMarks(undone)[1].text, "قل هو الله أحد الله الصمد لم يلد ولم يولد ولم يكن له كفوا أحد");
+  assert.equal(
+    splitMarks(undone)[1].text,
+    "قل هو الله أحد الله الصمد لم يلد ولم يولد ولم يكن له كفوا أحد",
+  );
   assert.equal(toggleQuran(undone, 0), replaced);
   // Traduction : le texte officiel, sans marques.
   assert.ok(removeMarks(replaced).includes(verse(112, 2)));
@@ -138,7 +168,9 @@ test("rapidité : un long texte est analysé en moins d'une seconde", () => {
   const start = performance.now();
   const passages = findPassages(long);
   const seconds = (performance.now() - start) / 1000;
-  console.log(`  ${long.split(" ").length} mots analysés en ${seconds.toFixed(3)} s, ${passages.length} passages`);
+  console.log(
+    `  ${long.split(" ").length} mots analysés en ${seconds.toFixed(3)} s, ${passages.length} passages`,
+  );
   assert.equal(passages.length, 400);
   assert.ok(seconds < 1, `trop lent : ${seconds} s`);
 });
@@ -148,7 +180,12 @@ test("correction d'un mot ordinaire (non signalé) : il devient « corrigé »",
   const text = "قَالَ الشَّيْخُ: الْعِلْمُ نُورٌ";
   const word = splitWords(text).filter((piece) => piece.word)[2];
   assert.equal(word.text, "الْعِلْمُ");
-  const corrected = replaceRange(text, word.start, word.start + word.text.length, "الْعِلْمَ");
+  const corrected = replaceRange(
+    text,
+    word.start,
+    word.start + word.text.length,
+    "الْعِلْمَ",
+  );
   assert.equal(corrected, "قَالَ الشَّيْخُ: ⟨الْعِلْمَ⟩ نُورٌ");
   assert.equal(splitMarks(corrected)[1].kind, "fixed");
 });

@@ -21,7 +21,9 @@ export function formatTime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const rest = String(Math.floor(seconds % 60)).padStart(2, "0");
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}`
+    : `${minutes}:${rest}`;
 }
 
 // Découpe un texte en lignes non vides.
@@ -38,7 +40,8 @@ const DOUBT = /⟦[^⟦⟧⟨⟩]*⟧/g;
 // Passage coranique remplacé par le texte officiel (voir lib/quran.ts) :
 // ⟪on|référence|texte officiel|texte de l'IA⟫ ; « off » quand l'utilisateur a annulé le remplacement.
 const QURAN = /⟪(on|off)\|([^|⟪⟫]*)\|([^|⟪⟫]*)\|([^|⟪⟫]*)⟫/g;
-const ANY_MARK = /⟦([^⟦⟧⟨⟩]*)⟧|⟨([^⟦⟧⟨⟩]*)⟩|⟪(on|off)\|([^|⟪⟫]*)\|([^|⟪⟫]*)\|([^|⟪⟫]*)⟫/g;
+const ANY_MARK =
+  /⟦([^⟦⟧⟨⟩]*)⟧|⟨([^⟦⟧⟨⟩]*)⟩|⟪(on|off)\|([^|⟪⟫]*)\|([^|⟪⟫]*)\|([^|⟪⟫]*)⟫/g;
 
 export type Segment =
   | { text: string; kind: "normal"; start: number } // start : position dans la ligne
@@ -51,36 +54,61 @@ export function splitMarks(line: string): Segment[] {
   let last = 0;
   for (const match of line.matchAll(ANY_MARK)) {
     if (match.index > last) {
-      segments.push({ text: line.slice(last, match.index), kind: "normal", start: last });
+      segments.push({
+        text: line.slice(last, match.index),
+        kind: "normal",
+        start: last,
+      });
     }
-    if (match[1] !== undefined) segments.push({ text: match[1], kind: "doubt" });
-    else if (match[2] !== undefined) segments.push({ text: match[2], kind: "fixed" });
+    if (match[1] !== undefined)
+      segments.push({ text: match[1], kind: "doubt" });
+    else if (match[2] !== undefined)
+      segments.push({ text: match[2], kind: "fixed" });
     else {
       const on = match[3] === "on";
-      segments.push({ text: on ? match[5] : match[6], kind: "quran", on, reference: match[4] });
+      segments.push({
+        text: on ? match[5] : match[6],
+        kind: "quran",
+        on,
+        reference: match[4],
+      });
     }
     last = match.index + match[0].length;
   }
-  if (last < line.length) segments.push({ text: line.slice(last), kind: "normal", start: last });
+  if (last < line.length)
+    segments.push({ text: line.slice(last), kind: "normal", start: last });
   return segments;
 }
 
 // Découpe un morceau de texte en mots et en séparateurs (espaces, ponctuation),
 // avec la position de chaque morceau.
-export function splitWords(text: string): { text: string; start: number; word: boolean }[] {
+export function splitWords(
+  text: string,
+): { text: string; start: number; word: boolean }[] {
   const pieces: { text: string; start: number; word: boolean }[] = [];
   let last = 0;
   for (const match of text.matchAll(/[\p{L}\p{M}]+/gu)) {
-    if (match.index > last) pieces.push({ text: text.slice(last, match.index), start: last, word: false });
+    if (match.index > last)
+      pieces.push({
+        text: text.slice(last, match.index),
+        start: last,
+        word: false,
+      });
     pieces.push({ text: match[0], start: match.index, word: true });
     last = match.index + match[0].length;
   }
-  if (last < text.length) pieces.push({ text: text.slice(last), start: last, word: false });
+  if (last < text.length)
+    pieces.push({ text: text.slice(last), start: last, word: false });
   return pieces;
 }
 
 // Remplace le texte entre `start` et `end` par `word`, marqué comme corrigé.
-export function replaceRange(text: string, start: number, end: number, word: string): string {
+export function replaceRange(
+  text: string,
+  start: number,
+  end: number,
+  word: string,
+): string {
   return `${text.slice(0, start)}⟨${word}⟩${text.slice(end)}`;
 }
 
@@ -93,7 +121,9 @@ export function quranBrackets(text: string, reference: string): string {
 export function toggleQuran(text: string, n: number): string {
   let count = 0;
   return text.replace(QURAN, (whole, state, reference, official, original) =>
-    count++ === n ? `⟪${state === "on" ? "off" : "on"}|${reference}|${official}|${original}⟫` : whole,
+    count++ === n
+      ? `⟪${state === "on" ? "off" : "on"}|${reference}|${official}|${original}⟫`
+      : whole,
   );
 }
 
@@ -128,17 +158,26 @@ export function removeMarks(text: string): string {
 // Texte sans les marques des mots corrigés, mais avec les mots à vérifier (pour la relecture).
 // Les passages coraniques remplacés sont retirés : le texte officiel n'est jamais relu par l'IA.
 export function removeFixedMarks(text: string): string {
-  return text.replace(QURAN, (whole, state) => (state === "on" ? " … " : showQuran(whole))).replace(/[⟨⟩]/g, "");
+  return text
+    .replace(QURAN, (whole, state) =>
+      state === "on" ? " … " : showQuran(whole),
+    )
+    .replace(/[⟨⟩]/g, "");
 }
 
 // Met en rouge (entoure de ⟦ ⟧) chaque apparition exacte de `word` qui n'est pas déjà marquée.
 export function markWord(text: string, word: string): string {
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const alone = new RegExp(`(?<![\\p{L}\\p{M}⟦⟨])${escaped}(?![\\p{L}\\p{M}⟧⟩])`, "gu");
+  const alone = new RegExp(
+    `(?<![\\p{L}\\p{M}⟦⟨])${escaped}(?![\\p{L}\\p{M}⟧⟩])`,
+    "gu",
+  );
   // Jamais à l'intérieur d'un passage coranique.
   return text
     .split(/(⟪[^⟪⟫]*⟫)/)
-    .map((piece) => (piece.startsWith("⟪") ? piece : piece.replace(alone, `⟦${word}⟧`)))
+    .map((piece) =>
+      piece.startsWith("⟪") ? piece : piece.replace(alone, `⟦${word}⟧`),
+    )
     .join("");
 }
 
@@ -159,8 +198,11 @@ export function splitText(text: string, size = 2500): string[] {
       add(paragraph);
       continue;
     }
-    for (const sentence of paragraph.match(/[^.!?؟۔]+[.!?؟۔]*\s*/g) ?? [paragraph]) {
-      for (let start = 0; start < sentence.length; start += size) add(sentence.slice(start, start + size));
+    for (const sentence of paragraph.match(/[^.!?؟۔]+[.!?؟۔]*\s*/g) ?? [
+      paragraph,
+    ]) {
+      for (let start = 0; start < sentence.length; start += size)
+        add(sentence.slice(start, start + size));
     }
   }
   if (current.trim()) pieces.push(current);

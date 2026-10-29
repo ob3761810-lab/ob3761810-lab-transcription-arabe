@@ -1,7 +1,14 @@
 // Fabrique le fichier Word (.docx) dans le navigateur, avec le même contenu que le PDF.
 // L'arabe est écrit de droite à gauche, le français et l'anglais de gauche à droite.
 
-import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
+import {
+  AlignmentType,
+  Document,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  TextRun,
+} from "docx";
 import { isArabic, quranBrackets, splitMarks, toLines } from "@/lib/text";
 
 export type WordContent = {
@@ -33,7 +40,12 @@ function line(text: string): Paragraph {
   const runs = splitMarks(text).flatMap((segment) => {
     if (segment.kind === "quran" && segment.on) {
       return [
-        new TextRun({ text: quranBrackets(segment.text, segment.reference), font: FONT, color: QURAN_COLOR, ...style }),
+        new TextRun({
+          text: quranBrackets(segment.text, segment.reference),
+          font: FONT,
+          color: QURAN_COLOR,
+          ...style,
+        }),
         new TextRun({
           text: ` (${segment.reference}) `,
           font: FONT,
@@ -78,12 +90,22 @@ function note(text: string, color: string): Paragraph {
   });
 }
 
-export async function buildWordFile({ fileName, sections, translation }: WordContent): Promise<Blob> {
+export async function buildWordFile({
+  fileName,
+  sections,
+  translation,
+}: WordContent): Promise<Blob> {
   const paragraphs: Paragraph[] = [
     heading("Transcription"),
     note(fileName, "71717A"),
-    note("Texte non relu : il peut contenir des erreurs de transcription ou de harakat.", "B45309"),
-    note("En rouge : mots dont l'orthographe ou les harakat sont à vérifier.", RED),
+    note(
+      "Texte non relu : il peut contenir des erreurs de transcription ou de harakat.",
+      "B45309",
+    ),
+    note(
+      "En rouge : mots dont l'orthographe ou les harakat sont à vérifier.",
+      RED,
+    ),
     note(
       "En vert, entre ﴿ ﴾ : versets du Coran remplacés par le texte officiel de Tanzil (tanzil.net), avec leur référence.",
       QURAN_COLOR,
