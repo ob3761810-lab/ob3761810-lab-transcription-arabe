@@ -19,6 +19,8 @@ import {
   removeMarks,
   splitMarks,
   splitText,
+  quranBrackets,
+  toggleQuran,
   toLines,
 } from "@/lib/text";
 
@@ -63,23 +65,45 @@ function MixedText({ text }: { text: string }) {
   );
 }
 
+// Passage coranique par défaut (traduction, aperçu) : texte officiel suivi de sa référence.
+function DefaultQuran({ text, on, reference }: { text: string; on: boolean; reference: string }) {
+  if (!on) return text;
+  return (
+    <>
+      {quranBrackets(text, reference)}{" "}
+      <bdi dir="ltr" className="font-sans text-sm text-gold-700">
+        ({reference})
+      </bdi>
+    </>
+  );
+}
+
 // Affiche un texte ligne par ligne. Les mots marqués (à vérifier ou corrigés) sont dessinés
 // par `renderMark`, qui reçoit leur numéro dans le texte (0, 1, 2…), le mot et son type.
+// Les passages coraniques sont dessinés par `renderQuran`, avec leur propre numéro.
 function Lines({
   text,
   renderMark = (_, word, kind) =>
     kind === "doubt" ? <span className="text-red-600">{word}</span> : word,
+  renderQuran = (_, passage) => <DefaultQuran {...passage} />,
 }: {
   text: string;
   renderMark?: (n: number, word: string, kind: "doubt" | "fixed") => React.ReactNode;
+  renderQuran?: (
+    n: number,
+    passage: { text: string; on: boolean; reference: string },
+  ) => React.ReactNode;
 }) {
   let markNumber = 0;
+  let quranNumber = 0;
   return (
     <div className="space-y-2">
       {toLines(text).map((line, index) => {
         const content = splitMarks(line).map((segment, i) =>
           segment.kind === "normal" ? (
             segment.text
+          ) : segment.kind === "quran" ? (
+            <span key={i}>{renderQuran(quranNumber++, segment)}</span>
           ) : (
             <span key={i}>{renderMark(markNumber++, segment.text, segment.kind)}</span>
           ),
@@ -133,6 +157,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   }>({ step: "idle" });
   // Mot douteux en cours de correction : partie, numéro du mot dans la partie, texte saisi.
   const [editing, setEditing] = useState<{ part: number; n: number; value: string } | null>(null);
+  // Passage coranique dont la fenêtre (référence, annuler) est ouverte.
+  const [openQuran, setOpenQuran] = useState<{ part: number; n: number } | null>(null);
   // Extraits du fichier et numéro du prochain extrait à transcrire (pour « Reprendre »).
   const chunks = useRef<Blob[]>([]);
   // Pour un PDF : pages contenues dans chaque extrait (null pour un audio ou une vidéo).
@@ -161,6 +187,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   }, []);
 
   const transcript = parts.filter((text) => text.trim() !== "").join("\n");
+  const hasQuran = parts.some((text) => text.includes("⟪on|"));
   const doubtCount = countDoubts(transcript);
 
   const busy = status.step === "preparing" || status.step === "transcribing";
@@ -258,6 +285,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     setParts([]);
     setLiteParts([]);
     setEditing(null);
+    setOpenQuran(null);
     setSuggestions({});
     setCheck({ step: "idle" });
     setTranslation(null);
@@ -468,6 +496,88 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         >
           {word}
         </button>
+      );
+    };
+  }
+
+  // Passage coranique : texte officiel sur fond doré avec sa référence ; un clic ouvre une fenêtre
+  // pour annuler le remplacement (fausse détection) ou le rétablir.
+  function renderQuran(part: number) {
+    return function QuranPassage(
+      n: number,
+      passage: { text: string; on: boolean; reference: string },
+    ) {
+      const open = openQuran?.part === part && openQuran.n === n;
+      return (
+        <>
+          <button
+            type="button"
+            title={
+              passage.on
+                ? `Verset remplacé par le texte officiel : ${passage.reference}. Cliquez pour les détails.`
+                : "Remplacement annulé (texte de l'IA). Cliquez pour rétablir le texte officiel."
+            }
+            onClick={() => setOpenQuran(open ? null : { part, n })}
+            className={
+              passage.on
+                ? "rounded-lg bg-gold-100/70 px-1 ring-1 ring-gold-200 hover:bg-gold-100 print:bg-transparent print:ring-0"
+                : "rounded-lg border border-dashed border-stone-300 px-1 hover:bg-stone-50 print:border-0"
+            }
+          >
+            {passage.on ? (
+              <>
+                {quranBrackets(passage.text, passage.reference)}{" "}
+                <bdi dir="ltr" className="font-sans text-sm whitespace-nowrap text-gold-700">
+                  <span className="no-print" aria-hidden>
+                    📖{" "}
+                  </span>
+                  ({passage.reference})
+                </bdi>
+              </>
+            ) : (
+              passage.text
+            )}
+          </button>
+          {open && (
+            <span
+              dir="ltr"
+              className="no-print my-1 flex max-w-full flex-col gap-2 rounded-lg border border-gold-200 bg-white p-3 text-left font-sans text-base shadow-sm"
+            >
+              <span className="text-sm text-stone-700">
+                {passage.on
+                  ? `Verset reconnu et remplacé par le texte officiel du Coran (Tanzil). Référence : ${passage.reference}.`
+                  : "Remplacement annulé : c'est le texte de l'IA qui est affiché et téléchargé."}
+              </span>
+              <span className="flex flex-wrap gap-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setParts((previous) =>
+                      previous.map((text, index) => (index === part ? toggleQuran(text, n) : text)),
+                    );
+                    setOpenQuran(null);
+                  }}
+                  className={
+                    passage.on
+                      ? "rounded border border-stone-300 bg-white px-3 py-1 text-stone-700"
+                      : "rounded bg-brand-700 px-3 py-1 text-white"
+                  }
+                >
+                  {passage.on
+                    ? "Annuler le remplacement (remettre le texte de l'IA)"
+                    : "Rétablir le texte officiel"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenQuran(null)}
+                  className="px-2 py-1 text-stone-500"
+                >
+                  Fermer
+                </button>
+              </span>
+            </span>
+          )}
+        </>
       );
     };
   }
@@ -789,6 +899,20 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   mots corrigés sont soulignés en vert : cliquez dessus pour les modifier à nouveau.
                 </p>
               )}
+              {hasQuran && (
+                <p className="mt-3 rounded-lg border border-gold-200 bg-gold-100/50 px-4 py-2 text-sm text-stone-800">
+                  Les versets du Coran reconnus sont remplacés par le texte officiel (Tanzil), entre{" "}
+                  <bdi dir="rtl" className="font-arabic">
+                    ﴿ ﴾
+                  </bdi>
+                  , avec leur référence.
+                  <span className="no-print">
+                    {" "}
+                    Cliquez sur un verset pour annuler le remplacement si ce n&apos;est pas un
+                    verset.
+                  </span>
+                </p>
+              )}
               <div className="no-print mt-4 inline-flex rounded-lg border border-stone-300 p-1">
                 {[true, false].map((value) => (
                   <button
@@ -832,7 +956,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                           Fait en version légère : vérifiez bien les harakat.
                         </span>
                       )}
-                      <Lines text={shown(text)} renderMark={renderMark(index)} />
+                      <Lines
+                        text={shown(text)}
+                        renderMark={renderMark(index)}
+                        renderQuran={renderQuran(index)}
+                      />
                     </div>
                   ),
                 )}

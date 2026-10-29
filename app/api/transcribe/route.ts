@@ -11,8 +11,20 @@ import {
   vocalizePdf,
   vocalizeText,
 } from "@/lib/gemini";
+import { replaceQuranPassages } from "@/lib/quran";
 
 export const maxDuration = 300;
+
+// Les versets du Coran reconnus sont remplacés par le texte officiel (Tanzil).
+// En cas de problème, le texte de l'IA est rendu tel quel plutôt que de perdre la transcription.
+function withOfficialQuran(text: string): string {
+  try {
+    return replaceQuranPassages(text);
+  } catch (error) {
+    console.error(error);
+    return text;
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -34,7 +46,7 @@ export async function POST(request: Request) {
             Number(params.get("last")) || 1,
           )
         : await transcribeWithHarakat(data, version);
-    return NextResponse.json({ text, lite: version === "legere" });
+    return NextResponse.json({ text: withOfficialQuran(text), lite: version === "legere" });
   } catch (error) {
     if (error instanceof RateLimitError) {
       // Limite gratuite atteinte : le navigateur attend un peu puis réessaie.

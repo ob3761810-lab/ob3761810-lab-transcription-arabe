@@ -20,6 +20,11 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
    Un clic ouvre une fenêtre : choisir un mot dans la liste proposée, écrire sa propre correction, ou confirmer.
    Les mots corrigés sont soulignés en vert et restent modifiables (faute de frappe, retour au mot d'origine).
    Non vérifiés, les mots restent en rouge dans le PDF et le Word.
+8. Les versets du Coran reconnus dans le texte de l'IA sont remplacés par le texte officiel (Tanzil),
+   entre ﴿ ﴾, sur fond doré, avec leur référence (sourate et verset). Un clic permet d'annuler le
+   remplacement (fausse détection) ou de le rétablir. Le PDF et le Word contiennent le texte officiel
+   et la référence. Les versets officiels ne sont jamais relus ni marqués en rouge par l'IA.
+   Hadiths : pas de remplacement pour l'instant.
 
 Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Facebook, TikTok) pour le redonner à l'utilisateur.
 
@@ -38,6 +43,10 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   un par un à Gemini (`vocalizeText`).
 - PDF téléchargé : impression du navigateur (« Enregistrer au format PDF »), qui affiche parfaitement l'arabe.
 - Word : bibliothèque `docx` (`lib/word.ts`), fichier créé dans le navigateur, arabe en droite-à-gauche.
+- Versets : fichier officiel Tanzil « Simple » (`data/quran-simple.txt`, CC BY 3.0) gardé tel quel,
+  avec son bloc de licence ; source citée dans le pied de page avec un lien vers tanzil.net.
+  Détection sans IA dans `lib/quran.ts` (normalisation, index de suites de 3 mots, tolérance réglable
+  dans `SETTINGS`), appliquée côté serveur dans `app/api/transcribe/route.ts`. Tests : `npm test`.
 - Nom du site : « Harakat Nass » (حَرَكَاتُ النَّصِّ). Style classique islamique : vert profond, doré,
   fond crème, motif géométrique dans l'en-tête, police arabe Amiri. Couleurs dans `app/globals.css`.
 - Pas de service payant sans mon accord.
@@ -50,6 +59,7 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
 
 ## Règles de qualité sur l'arabe
 - L'IA ne génère JAMAIS de numéro de verset, de source de hadith ni de nom de savant.
+  Les références de versets viennent uniquement du fichier Tanzil, jamais de l'IA.
 - Ne jamais présenter un texte comme « vérifié » : il est toujours marqué « non relu ».
 - Tester l'affichage RTL et les harakat à l'écran et dans le PDF (pas de chevauchement, ordre correct
   dans les phrases mélangées arabe/français).

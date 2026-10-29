@@ -2,7 +2,7 @@
 // L'arabe est écrit de droite à gauche, le français et l'anglais de gauche à droite.
 
 import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
-import { isArabic, splitMarks, toLines } from "@/lib/text";
+import { isArabic, quranBrackets, splitMarks, toLines } from "@/lib/text";
 
 export type WordContent = {
   fileName: string;
@@ -16,24 +16,42 @@ const FONT = { ascii: "Calibri", hAnsi: "Calibri", cs: "Arial" };
 // Les mots dont Google n'était pas sûr, et qui n'ont pas été vérifiés, restent en rouge.
 const RED = "DC2626";
 
+// Les passages du Coran remplacés par le texte officiel : en vert foncé, suivis de leur référence.
+const QURAN_COLOR = "145433";
+const REFERENCE_COLOR = "7A5F12";
+
 function line(text: string): Paragraph {
   const arabic = isArabic(text);
-  const runs = splitMarks(text).map(
-    (segment) =>
+  const style = arabic
+    ? {
+        rightToLeft: true,
+        size: 32,
+        sizeComplexScript: 32,
+        language: { bidirectional: "ar-SA" },
+      }
+    : { size: 24, sizeComplexScript: 28 };
+  const runs = splitMarks(text).flatMap((segment) => {
+    if (segment.kind === "quran" && segment.on) {
+      return [
+        new TextRun({ text: quranBrackets(segment.text, segment.reference), font: FONT, color: QURAN_COLOR, ...style }),
+        new TextRun({
+          text: ` (${segment.reference}) `,
+          font: FONT,
+          color: REFERENCE_COLOR,
+          size: 20,
+          sizeComplexScript: 20,
+        }),
+      ];
+    }
+    return [
       new TextRun({
         text: segment.text,
         font: FONT,
         color: segment.kind === "doubt" ? RED : undefined,
-        ...(arabic
-          ? {
-              rightToLeft: true,
-              size: 32,
-              sizeComplexScript: 32,
-              language: { bidirectional: "ar-SA" },
-            }
-          : { size: 24, sizeComplexScript: 28 }),
+        ...style,
       }),
-  );
+    ];
+  });
   if (arabic) {
     return new Paragraph({
       bidirectional: true,
@@ -66,6 +84,10 @@ export async function buildWordFile({ fileName, sections, translation }: WordCon
     note(fileName, "71717A"),
     note("Texte non relu : il peut contenir des erreurs de transcription ou de harakat.", "B45309"),
     note("En rouge : mots dont l'orthographe ou les harakat sont à vérifier.", RED),
+    note(
+      "En vert, entre ﴿ ﴾ : versets du Coran remplacés par le texte officiel de Tanzil (tanzil.net), avec leur référence.",
+      QURAN_COLOR,
+    ),
   ];
 
   for (const section of sections) {
