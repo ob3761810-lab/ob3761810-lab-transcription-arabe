@@ -121,10 +121,8 @@ const STRUCTURE_SCHEMA = {
               properties: {
                 type: { type: "STRING", enum: ["titre", "paragraphe", "vers", "note"] },
                 text: { type: "STRING" },
-                sadr: { type: "STRING" },
-                ajuz: { type: "STRING" },
               },
-              required: ["type"],
+              required: ["type", "text"],
             },
           },
         },
@@ -149,7 +147,7 @@ Rules:
 - Block types:
   - "titre": a heading, chapter or section title. Field "text". If the heading is the basmala written in calligraphy, write it in plain letters: بسم الله الرحمن الرحيم.
   - "paragraphe": prose, for example the commentary that explains the poem. A whole paragraph of the original is ONE block, even if it has several sentences: join the line breaks inside the paragraph with spaces. Start a new block only where the original starts a new paragraph (a new indented line, often starting with « أي » or with a word of the poem between brackets). Field "text".
-  - "vers": one printed line of the poem. A line of poetry is printed (often in bold) as two halves side by side on the SAME line, separated by a wide blank space. "sadr" = the words on the RIGHT half of that line, "ajuz" = the words on the LEFT half of that same line. Fill only "sadr" and "ajuz", leave "text" empty, and write each line of poetry only once. One block per printed line of poetry. Never pair a half with a half from another line. A line of poetry is never a "titre", even if it is bold.
+  - "vers": ONE printed line of the poem. A line of poetry is printed (often in bold) as two halves side by side on the SAME line, separated by a wide blank space. In "text", copy that printed line exactly as you read it (right half first, then left half) and write " *** " at the place of the wide blank space, for example: "أقسام لازم لديهم أربعة *** وتلك كلمي وحرفي معه". One block per printed line of poetry: two printed lines of poetry are always two separate blocks. Write each line of poetry only once. A line of poetry is never a "titre", even if it is bold.
   - "note": a footnote at the bottom of the page, below a short line. Field "text".
 - Copy the text exactly as printed: same words, same spelling, same order. Keep the harakat that are printed, but do not add any. Never correct, translate, summarize or skip anything.
 - Words stretched with a long line for justification (for example الأشـــــاء) are written normally, without the stretching line (الأشياء).

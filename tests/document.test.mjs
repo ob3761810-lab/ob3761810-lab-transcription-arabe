@@ -154,6 +154,59 @@ test("vers rendu deux fois par l'IA (une moitié + le vers entier) : un seul ver
   ]);
 });
 
+test("vers écrits « sadr *** ʿajuz » : coupés à la marque, deux vers réunis séparés, répétitions retirées", () => {
+  // Page « أقسام المد اللازم » (3e essai) avec le nouveau format demandé à l'IA.
+  const pages = parseStructure(
+    {
+      pages: [
+        {
+          page: 1,
+          blocks: [
+            { type: "titre", text: "أقسام المد اللازم" },
+            // Deux vers réunis dans un seul bloc : 3 marques → deux vers.
+            {
+              type: "vers",
+              text: "أقسام لازم لديهم أربعة *** وتلك كلمي وحرفي معه *** كلاهما مخفف مثقل *** فهذه أربعة تفصل",
+            },
+            // Les mêmes vers redonnés une seconde fois : retirés.
+            { type: "vers", text: "كلاهما مخفف مثقل *** فهذه أربعة تفصل" },
+            { type: "paragraphe", text: "أشرت إلى أن المد اللازم ينقسم عند القراء على أربعة أقسام" },
+            { type: "vers", text: "فإن بكلمة سكون اجتمع *** مع حرف مد فهو كلمي وقع" },
+          ],
+        },
+      ],
+    },
+    1,
+  );
+  assert.deepEqual(pagesToText(pages).split("\n").slice(1), [
+    "## أقسام المد اللازم",
+    "@@ أقسام لازم لديهم أربعة ‖ وتلك كلمي وحرفي معه",
+    "@@ كلاهما مخفف مثقل ‖ فهذه أربعة تفصل",
+    "أشرت إلى أن المد اللازم ينقسم عند القراء على أربعة أقسام",
+    "@@ فإن بكلمة سكون اجتمع ‖ مع حرف مد فهو كلمي وقع",
+  ]);
+});
+
+test("vers répété par l'IA sous une autre forme (ancien format) : la copie est retirée", () => {
+  // Cas réel du 3e essai : le 2e bloc redonnait les deux premiers vers d'un seul tenant.
+  const pages = parseStructure(
+    {
+      pages: [
+        {
+          page: 1,
+          blocks: [
+            { type: "vers", sadr: "أقسام لازم لديهم أربعة", ajuz: "وتلك كلمي وحرفي معه" },
+            { type: "vers", sadr: "كلاهما مخفف مثقل", ajuz: "فهذه أربعة تفصل" },
+            { type: "vers", text: "أقسام لازم لديهم أربعة وتلك كلمي وحرفي معه كلاهما مخفف مثقل فهذه أربعة تفصل" },
+          ],
+        },
+      ],
+    },
+    1,
+  );
+  assert.equal(countBlocks(pagesToText(pages)).vers, 2);
+});
+
 test("traduction : vers écrits « sadr — ʿajuz », sans préfixes de mise en page", () => {
   const text = pagesToText(parseStructure(STRUCTURE, 1));
   const plain = plainLines(text);

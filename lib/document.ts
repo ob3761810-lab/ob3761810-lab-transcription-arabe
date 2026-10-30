@@ -41,8 +41,16 @@ export function parseStructure(data: unknown, firstPage: number): DocPage[] {
       const text = oneLine(raw?.text);
       const sadr = oneLine(raw?.sadr);
       const ajuz = oneLine(raw?.ajuz);
+      if (type === "vers" && HEMISTICH_GAP.test(text)) {
+        // Vers écrit « sadr *** ʿajuz » (deux vers si l'IA en a réuni deux : 3 marques).
+        for (const verse of versesFromLine(text)) {
+          if (!isRepeat(blocks, verse)) blocks.push({ type: "vers", ...verse });
+        }
+        continue;
+      }
       if (type === "vers") {
         const verse = rebuildVerse(sadr, ajuz, text);
+        if (verse && isRepeat(blocks, verse)) continue;
         const previous = blocks[blocks.length - 1];
         if (verse && previous?.type === "vers" && !previous.ajuz && !verse.sadr) {
           // Seconde moitié rendue à part : elle complète le vers précédent.
@@ -66,6 +74,40 @@ export function parseStructure(data: unknown, firstPage: number): DocPage[] {
     }
     return { page: firstPage + index, blocks };
   });
+}
+
+// Marque « *** » écrite par l'IA à la place du grand blanc entre les deux hémistiches.
+const HEMISTICH_GAP = /\s*\*{2,}\s*/;
+
+// Une ligne « sadr *** ʿajuz » → un vers ; « a *** b *** c *** d » → deux vers ; une moitié seule
+// reste un vers incomplet.
+function versesFromLine(line: string): { sadr: string; ajuz: string }[] {
+  const halves = line
+    .split(new RegExp(HEMISTICH_GAP.source, "g"))
+    .map((half) => half.trim())
+    .filter(Boolean);
+  const verses: { sadr: string; ajuz: string }[] = [];
+  for (let i = 0; i < halves.length; i += 2) {
+    verses.push({ sadr: halves[i], ajuz: halves[i + 1] ?? "" });
+  }
+  return verses;
+}
+
+// Forme simplifiée des mots, pour repérer un vers répété.
+const verseWords = (verse: { sadr: string; ajuz: string }) =>
+  `${verse.sadr} ${verse.ajuz}`.split(/\s+/).map(key).filter(Boolean);
+
+// Vers déjà présent : ses mots se retrouvent tels quels dans les deux vers qui le précèdent
+// (l'IA a parfois redonné le même vers, ou deux vers à la fois, une seconde fois).
+function isRepeat(blocks: DocBlock[], verse: { sadr: string; ajuz: string }): boolean {
+  const words = verseWords(verse).join(" ");
+  if (!words) return true;
+  const before = blocks
+    .slice(-2)
+    .filter((block) => block.type === "vers")
+    .map((block) => verseWords(block as { sadr: string; ajuz: string }).join(" "))
+    .join(" ");
+  return before !== "" && ` ${before} `.includes(` ${words} `);
 }
 
 // Un vers à partir de ce que l'IA a rempli : sadr et ʿajuz ; ou le vers entier (« text ») avec

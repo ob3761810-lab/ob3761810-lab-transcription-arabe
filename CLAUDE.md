@@ -58,7 +58,8 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   extraits de 2 minutes (limite de 4,5 Mo par envoi sur Vercel). Aucun fichier n'est stocké.
 - PDF déposé : découpé dans le navigateur en paquets de 3 pages (bibliothèque `pdf-lib`, `lib/pdf.ts`).
   Pour chaque paquet, deux demandes à Gemini : 1. structure des pages en JSON imposé (`readPdfStructure` :
-  titre, paragraphe, vers sadr/ʿajuz, note), texte recopié sans harakat ajoutées ; 2. harakat bloc par
+  titre, paragraphe, vers « sadr *** ʿajuz » dans un seul champ, note), texte recopié sans harakat
+  ajoutées ; vers répétés par l'IA retirés, deux vers réunis séparés ; 2. harakat bloc par
   bloc (`vocalizeList`). Vérification dans `lib/document.ts` : même nombre de blocs, même ordre, mêmes
   mots. Un mot légèrement changé par l'IA garde les lettres de l'auteur, en rouge (harakat gardées sur le
   reste du bloc) ; un bloc réécrit reste sans harakat (avertissement). Aucun texte n'est jamais jeté :
