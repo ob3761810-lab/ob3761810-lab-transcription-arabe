@@ -21,6 +21,9 @@ export const SETTINGS = {
   maxErrorRatio: 0.2,
   // Part minimale de mots exactement identiques (après normalisation).
   minExactRatio: 0.6,
+  // En dessous de ce nombre de mots, le passage doit correspondre exactement (aucune lettre
+  // différente, aucun mot en trop ou en moins) : on ne touche jamais aux lettres d'une formule courte.
+  exactBelow: 8,
 };
 
 // Noms des sourates, dans l'ordre.
@@ -176,13 +179,17 @@ function compare(a: string, b: string): Comparison {
 
 // ---------- Recherche ----------
 
-type Token = { norm: string; start: number; end: number };
+// `lineStart` : premier mot de sa ligne (rien d'autre que des signes ou des chiffres avant lui).
+type Token = { norm: string; start: number; end: number; lineStart: boolean };
 
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   for (const match of text.matchAll(ARABIC_WORD)) {
     const norm = normalize(match[0]);
-    if (norm) tokens.push({ norm, start: match.index, end: match.index + match[0].length });
+    if (!norm) continue;
+    const start = match.index;
+    const before = text.slice(text.lastIndexOf("\n", start - 1) + 1, start);
+    tokens.push({ norm, start, end: start + match[0].length, lineStart: !/\p{L}/u.test(before) });
   }
   return tokens;
 }
@@ -320,7 +327,7 @@ export type Passage = {
 };
 
 // Vérifie qu'un alignement est assez sûr pour remplacer le texte.
-function accept(alignment: Alignment): Passage | null {
+function accept(alignment: Alignment, lineStart: boolean): Passage | null {
   const { words } = loadCorpus();
   const { quranStart: qs, quranEnd: qe } = alignment;
   const n = qe - qs + 1;
@@ -329,14 +336,18 @@ function accept(alignment: Alignment): Passage | null {
     .map((word) => word.display)
     .join(" ");
 
-  // Basmala seule : texte officiel, sans numéro (elle n'est numérotée que dans Al-Fatiha).
+  // Basmala : remplacée seulement si elle est seule sur sa ligne ou en tête de ligne (titre, début
+  // de bloc), et écrite exactement. Citée au milieu d'une phrase (« متبركاً بإسم الله الرحمن الرحيم »),
+  // elle reste telle que l'auteur l'a écrite.
   if (n === BASMALA_NORM.length && BASMALA_NORM.every((word, i) => words[qs + i].norm === word)) {
-    return alignment.errors === 0
+    return lineStart && alignment.errors === 0 && alignment.exact === n
       ? { start: 0, end: 0, reference: "Basmala", official }
       : null;
   }
 
   if (n < SETTINGS.minWords) return null;
+  // Passage court : uniquement s'il est exactement identique (aucune lettre changée).
+  if (n < SETTINGS.exactBelow && (alignment.exact !== n || alignment.errors > 0)) return null;
   if (alignment.exact < Math.max(SETTINGS.minWords, Math.ceil(n * SETTINGS.minExactRatio))) {
     return null;
   }
@@ -370,7 +381,7 @@ function accept(alignment: Alignment): Passage | null {
 const ISTIADHA_NORM = ["اعوذ", "بالله", "من", "الشيطان", "الرجيم"];
 function istiadhaAt(tokens: Token[], t: number): boolean {
   return ISTIADHA_NORM.every(
-    (word, i) => tokens[t + i] && compare(tokens[t + i].norm, word) !== "different",
+    (word, i) => tokens[t + i]?.norm === word,
   );
 }
 
@@ -380,7 +391,7 @@ export function findPassages(text: string): Passage[] {
   const passages: Passage[] = [];
   let floor = 0; // on ne revient jamais sur un passage déjà trouvé
   for (let t = 0; t < tokens.length; ) {
-    if (istiadhaAt(tokens, t)) {
+    if (tokens[t].lineStart && istiadhaAt(tokens, t)) {
       const last = t + ISTIADHA_NORM.length - 1;
       passages.push({
         start: tokens[t].start,
@@ -392,7 +403,7 @@ export function findPassages(text: string): Passage[] {
       continue;
     }
     const alignment = bestAlignmentAt(tokens, t, floor);
-    const passage = alignment && accept(alignment);
+    const passage = alignment && accept(alignment, tokens[alignment.textStart].lineStart);
     if (alignment && passage) {
       passages.push({
         ...passage,
@@ -425,4 +436,14 @@ export function replaceQuranPassages(text: string): string {
     last = end;
   }
   return result + text.slice(last);
+}
+
+// Texte organisé en blocs, une ligne par bloc (PDF, sous-titres) : la détection se fait bloc par
+// bloc, sans jamais déborder sur le bloc suivant. Les vers de poésie (« @@ ») et les repères de
+// page (« — Page 3 — ») ne sont pas analysés.
+export function replaceQuranInBlocks(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => (line.startsWith("@@ ") || /^— Page \d+ —$/.test(line.trim()) ? line : replaceQuranPassages(line)))
+    .join("\n");
 }

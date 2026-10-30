@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { findPassages, replaceQuranPassages } from "../lib/quran.ts";
+import { findPassages, replaceQuranInBlocks, replaceQuranPassages } from "../lib/quran.ts";
 import { removeFixedMarks, removeMarks, splitMarks, toggleQuran, markWord } from "../lib/text.ts";
 
 // Texte officiel d'un verset, lu directement dans le fichier Tanzil.
@@ -105,10 +105,37 @@ test("texte sans aucun verset : inchangé", () => {
 });
 
 test("basmala seule et isti'adha : texte officiel, sans numéro de verset", () => {
-  const result = replaceQuranPassages("أعوذ بالله من الشيطان الرجيم. بسم الله الرحمن الرحيم. نبدأ الدرس");
+  // Chacune en tête de sa ligne (seule règle où elles sont remplacées).
+  const result = replaceQuranPassages("أعوذ بالله من الشيطان الرجيم.\nبسم الله الرحمن الرحيم. نبدأ الدرس");
   assert.ok(result.includes("⟪on|Isti'adha (formule, pas un verset)|أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ|"));
   assert.ok(result.includes(`⟪on|Basmala|${verse(1, 1)}|`));
   assert.ok(result.endsWith(". نبدأ الدرس"));
+});
+
+test("basmala citée au milieu d'une phrase (« بإسم ») : PAS remplacée, lettres de l'auteur gardées", () => {
+  const author = "أي أنظم الأشياء الآتية متبركاً بإسم الله الرحمن الرحيم";
+  assert.deepEqual(findPassages(author), []);
+  assert.equal(replaceQuranPassages(author), author);
+  // Même écrite correctement (« بسم »), au milieu d'une phrase elle n'est pas remplacée.
+  const correct = "أي أنظم الأشياء الآتية متبركاً بسم الله الرحمن الرحيم";
+  assert.equal(replaceQuranPassages(correct), correct);
+  // En revanche, seule sur sa ligne (titre), elle est remplacée.
+  const title = replaceQuranInBlocks(`## بسم الله الرحمن الرحيم\n${author}`);
+  assert.ok(title.startsWith("## ⟪on|Basmala|"));
+  assert.ok(title.endsWith(`\n${author}`));
+});
+
+test("formule courte : aucune lettre changée si elle n'est pas exactement identique", () => {
+  // « قل هو الله احد » (4 mots, verset entier) avec une lettre fausse : pas remplacée.
+  const text = "ثم قرأ قل هو الله أخد";
+  assert.equal(replaceQuranPassages(text), text);
+  // Exactement identique : remplacée.
+  assert.ok(replaceQuranPassages("ثم قرأ قل هو الله أحد").includes("⟪on|Al-Ikhlas 1|"));
+});
+
+test("détection bloc par bloc : jamais dans un vers de poésie, jamais à cheval sur deux blocs", () => {
+  const text = "@@ قل هو الله أحد الله الصمد ‖ لم يلد ولم يولد ولم يكن له كفوا أحد\nنص عادي";
+  assert.equal(replaceQuranInBlocks(text), text);
 });
 
 test("annuler puis rétablir un remplacement ; exports et relecture", () => {
