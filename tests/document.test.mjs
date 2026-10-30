@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   applyVocalized,
+  alignVocalized,
   blockTexts,
   checkVocalized,
   countBlocks,
@@ -54,21 +55,45 @@ test("vocalisation correcte : même nombre de blocs, même ordre, harakat appliq
   assert.equal(result.pages[0].blocks[2].sadr, "يقول راجي رحمة الغَفُورِ");
 });
 
-test("vocalisation qui fusionne deux blocs : refusée (nombre différent), rien n'est appliqué", () => {
+test("vocalisation qui fusionne deux blocs : harakat appliquées, mêmes blocs dans le même ordre", () => {
   const pages = parseStructure(STRUCTURE, 1);
   const texts = blockTexts(pages).map(vocalize);
   const merged = [texts[0], `${texts[1]} ${texts[2]}`, ...texts.slice(3)];
   const result = applyVocalized(pages, merged);
-  assert.equal(result.ok, false);
-  assert.deepEqual(result.pages, pages);
+  assert.equal(result.ok, true);
+  assert.equal(result.failed, 0);
+  assert.deepEqual(
+    result.pages[0].blocks.map((block) => block.type),
+    pages[0].blocks.map((block) => block.type),
+  );
+  assert.equal(result.pages[0].blocks[2].sadr, "يقول راجي رحمة الغَفُورِ");
+  assert.ok(result.pages[0].blocks[1].text.includes("اللَّهِ"));
 });
 
-test("vocalisation qui coupe un bloc : refusée", () => {
+test("vocalisation qui coupe un bloc en deux : harakat appliquées, le bloc reste entier", () => {
   const pages = parseStructure(STRUCTURE, 1);
-  const texts = blockTexts(pages);
+  const texts = blockTexts(pages).map(vocalize);
   const [first, ...rest] = texts[1].split(" . ");
   const result = applyVocalized(pages, [texts[0], first, rest.join(" . "), ...texts.slice(2)]);
-  assert.equal(result.ok, false);
+  assert.equal(result.failed, 0);
+  assert.equal(result.pages[0].blocks.length, pages[0].blocks.length);
+  assert.ok(result.pages[0].blocks[1].text.includes("وابتدأت"), "le paragraphe reste entier");
+});
+
+test("sous-titres automatiques : l'IA réunit des mots (« ال كل » → « آلِ كُلٍّ ») et deux paragraphes", () => {
+  const originals = [
+    "وعلى جميع الانبياء والمرسلين وعلى ال كل وصحبه اجمعين",
+    "وبعد فهذا مختصر في الفقه على المذهب الاحمد",
+  ];
+  // L'IA a réuni les deux paragraphes, et écrit « آلِ كُلٍّ » à la place de « ال كل ».
+  const answer = [
+    "وَعَلَى جَمِيعِ الْأَنْبِيَاءِ وَالْمُرْسَلِينَ وَعَلَى آلِ كُلٍّ وَصَحْبِهِ أَجْمَعِينَ وَبَعْدُ فَهَذَا مُخْتَصَرٌ فِي الْفِقْهِ عَلَى الْمَذْهَبِ الْأَحْمَدِ",
+  ];
+  const { texts, failed } = alignVocalized(originals, answer);
+  assert.equal(failed, 0);
+  assert.equal(texts.length, 2, "deux paragraphes, comme à l'origine");
+  assert.ok(texts[0].startsWith("وَعَلَى جَمِيعِ الْأَنْبِيَاءِ"));
+  assert.ok(texts[1].startsWith("وَبَعْدُ فَهَذَا"));
 });
 
 test("vocalisation qui change une lettre (« بإسم » → « بِسْمِ ») : harakat gardées, mot de l'auteur en rouge", () => {

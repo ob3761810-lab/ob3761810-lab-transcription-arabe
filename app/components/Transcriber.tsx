@@ -5,7 +5,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
-import { checkVocalized } from "@/lib/document";
+import { alignVocalized } from "@/lib/document";
 import { isPdf, PageTooLargeError, splitPdf } from "@/lib/pdf";
 import {
   blocksToText,
@@ -470,10 +470,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     }
   }
 
-  // Sous-titres : ajoute les harakat aux paragraphes et intertitres arabes, texte par texte (même
-  // méthode que les PDF de livre). Chaque texte est vérifié : hamza et ta marbuta ajoutées sont
-  // acceptées (orthographe) ; un mot vraiment différent reprend les mots du conférencier, en rouge ;
-  // un texte réécrit reste sans harakat. Les repères de temps ne sont pas envoyés.
+  // Sous-titres : ajoute les harakat aux paragraphes et intertitres arabes (même méthode que les PDF
+  // de livre), puis les remet mot par mot (`alignVocalized`) : hamza et ta marbuta ajoutées sont
+  // acceptées (orthographe) ; un mot changé garde les lettres du conférencier, en rouge ; un mot
+  // réuni ou coupé par l'IA reste tel quel. Les repères de temps ne sont pas envoyés.
   async function vocalizeBlocks(
     blocks: Block[],
     part: number,
@@ -491,17 +491,15 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         body: JSON.stringify({ texts: sent, version }),
       }),
     );
-    if (!Array.isArray(texts) || texts.length !== sent.length) {
-      return { blocks, failed: sent.length };
-    }
-    let failed = 0;
+    if (!Array.isArray(texts)) return { blocks, failed: sent.length };
+    // Mot par mot : peu importe si l'IA a réuni ou coupé des paragraphes.
+    const aligned = alignVocalized(
+      sent,
+      texts.map((text) => (typeof text === "string" ? text : "")),
+    );
     const result = [...blocks];
-    targets.forEach((index, k) => {
-      const answer = typeof texts[k] === "string" ? texts[k].replace(/\s+/g, " ").trim() : "";
-      const checked = checkVocalized(sent[k], answer);
-      if (checked) result[index] = { ...blocks[index], text: checked.text } as Block;
-      else failed++;
-    });
+    targets.forEach((index, k) => (result[index] = { ...blocks[index], text: aligned.texts[k] } as Block));
+    const failed = aligned.failed;
     return { blocks: result, failed };
   }
 
