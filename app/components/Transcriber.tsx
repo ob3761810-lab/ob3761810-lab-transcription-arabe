@@ -220,8 +220,9 @@ function Lines({
             <div
               key={index}
               dir="rtl"
-              className={`verse font-arabic mx-auto grid max-w-2xl grid-cols-2 gap-x-10 bg-gold-100/40 px-4 text-2xl leading-[2.2] font-bold ${nextIsVerse ? "mb-0! pt-1" : "pb-1"} ${lines[index - 1]?.line.startsWith("@@ ") ? "" : "rounded-t-lg pt-1"} ${nextIsVerse ? "" : "rounded-b-lg"}`}
+              className={`verse font-arabic mx-auto grid max-w-2xl grid-cols-2 gap-x-16 border-r-4 border-gold-400 bg-gold-100/50 px-6 text-2xl leading-[2.2] font-bold ${nextIsVerse ? "mb-0!" : "rounded-bl-lg pb-2"} ${lines[index - 1]?.line.startsWith("@@ ") ? "" : "rounded-tl-lg pt-2"}`}
             >
+              {/* Sadr à droite, ʿajuz à gauche, chacun centré dans sa colonne. */}
               <p className="text-center">{inline(sadr, start + skip)}</p>
               <p className="text-center">{inline(ajuz, start + skip + ajuzStart)}</p>
             </div>

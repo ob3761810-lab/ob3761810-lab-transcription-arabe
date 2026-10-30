@@ -8,6 +8,7 @@ import {
   HeadingLevel,
   Packer,
   Paragraph,
+  ShadingType,
   Table,
   TableCell,
   TableRow,
@@ -71,18 +72,20 @@ function runsOf(text: string, arabic: boolean, bold = false): TextRun[] {
 
 const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
 
-// Vers de poésie : tableau sans bordure à deux colonnes, de droite à gauche (sadr à droite), en gras.
-function verse(body: string): Table {
-  const { sadr, ajuz } = splitVerse(body);
+// Poème (vers qui se suivent) : un seul tableau sans bordure à deux colonnes, de droite à gauche
+// (sadr à droite), en gras, sur fond doré clair, chaque hémistiche centré dans sa cellule.
+function poem(bodies: string[]): Table {
   const cell = (text: string) =>
     new TableCell({
       width: { size: 50, type: WidthType.PERCENTAGE },
+      shading: { type: ShadingType.CLEAR, color: "auto", fill: "FAF6EA" },
       borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER },
+      margins: { left: 240, right: 240 },
       children: [
         new Paragraph({
           bidirectional: true,
           alignment: AlignmentType.CENTER,
-          spacing: { after: 60, line: 400 },
+          spacing: { after: 40, line: 400 },
           children: runsOf(text, true, true),
         }),
       ],
@@ -98,17 +101,42 @@ function verse(body: string): Table {
       insideHorizontal: NO_BORDER,
       insideVertical: NO_BORDER,
     },
-    rows: [new TableRow({ children: [cell(sadr), cell(ajuz)] })],
+    rows: bodies.map((body) => {
+      const { sadr, ajuz } = splitVerse(body);
+      return new TableRow({ children: [cell(sadr), cell(ajuz)] });
+    }),
   });
+}
+
+// Lignes d'un texte : les vers qui se suivent sont réunis en un seul poème (tableau).
+function lines(text: string): (Paragraph | Table)[] {
+  const result: (Paragraph | Table)[] = [];
+  let verses: string[] = [];
+  const endPoem = () => {
+    if (verses.length) {
+      result.push(poem(verses), new Paragraph({ spacing: { after: 120 }, children: [] }));
+    }
+    verses = [];
+  };
+  for (const full of toLines(text)) {
+    const { kind, skip } = lineStyle(full);
+    if (kind === "verse") {
+      verses.push(full.slice(skip));
+    } else {
+      endPoem();
+      result.push(line(full));
+    }
+  }
+  endPoem();
+  return result;
 }
 
 // Une ligne du texte : paragraphe, titre (« ## »), vers (« @@ »), note (« ^^ »), repère de page,
 // ou paragraphe avec repère de temps (« [4:05] »).
-function line(full: string): Paragraph | Table {
+function line(full: string): Paragraph {
   const { kind, stamp, skip } = lineStyle(full);
   const text = full.slice(skip);
   const arabic = isArabic(text);
-  if (kind === "verse") return verse(text);
   if (kind === "page") {
     return new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -187,12 +215,12 @@ export async function buildWordFile({
 
   for (const section of sections) {
     if (section.time) paragraphs.push(note(section.time, "047857"));
-    paragraphs.push(...toLines(section.text).map(line));
+    paragraphs.push(...lines(section.text));
   }
 
   if (translation) {
     paragraphs.push(heading(`Traduction (${translation.label})`));
-    paragraphs.push(...toLines(translation.text).map(line));
+    paragraphs.push(...lines(translation.text));
   }
 
   const document = new Document({ sections: [{ children: paragraphs }] });

@@ -122,6 +122,38 @@ test("structure mal remplie par l'IA : aucun texte perdu, moitiés de vers réun
   assert.deepEqual(countBlocks(text), { titre: 0, paragraphe: 4, vers: 1, note: 0 });
 });
 
+test("vers rendu deux fois par l'IA (une moitié + le vers entier) : un seul vers, bien coupé", () => {
+  // Cas réel (2e essai sur ESSAIE.pdf) : « sadr » rempli, « ajuz » vide, et le vers entier dans « text ».
+  const pages = parseStructure(
+    {
+      pages: [
+        {
+          page: 1,
+          blocks: [
+            {
+              type: "vers",
+              sadr: "يقول راجي رحمة الغفور",
+              ajuz: "",
+              text: "يقول راجي رحمة الغفور دوماً سليمان هو الجمزوري",
+            },
+            { type: "vers", text: "الحمد لله مصلياً على محمد وآله ومن تلا" },
+            { type: "vers", sadr: "", ajuz: "في النون والتنوين والمدود", text: "وبعد هذا النظم للمريد في النون والتنوين والمدود" },
+            { type: "paragraphe", text: "أي يقول مؤمل إحسان ربه الغفور" },
+          ],
+        },
+      ],
+    },
+    1,
+  );
+  const text = pagesToText(pages);
+  assert.deepEqual(text.split("\n").slice(1), [
+    "@@ يقول راجي رحمة الغفور ‖ دوماً سليمان هو الجمزوري",
+    "@@ الحمد لله مصلياً على ‖ محمد وآله ومن تلا",
+    "@@ وبعد هذا النظم للمريد ‖ في النون والتنوين والمدود",
+    "أي يقول مؤمل إحسان ربه الغفور",
+  ]);
+});
+
 test("traduction : vers écrits « sadr — ʿajuz », sans préfixes de mise en page", () => {
   const text = pagesToText(parseStructure(STRUCTURE, 1));
   const plain = plainLines(text);

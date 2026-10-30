@@ -62,7 +62,10 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   bloc (`vocalizeList`). Vérification dans `lib/document.ts` : même nombre de blocs, même ordre, mêmes
   mots. Un mot légèrement changé par l'IA garde les lettres de l'auteur, en rouge (harakat gardées sur le
   reste du bloc) ; un bloc réécrit reste sans harakat (avertissement). Aucun texte n'est jamais jeté :
-  bloc mal rempli → paragraphe, moitiés de vers réunies, tatweel retiré. Texte écrit une ligne par bloc :
+  bloc mal rempli → paragraphe, moitiés de vers réunies, tatweel retiré. Vers rendu en double par l'IA
+  (une moitié + le vers entier) ou d'un seul tenant : reconstruit sans doublon (`rebuildVerse`).
+  Vers qui se suivent = un poème : encadré doré, hémistiches centrés dans leur colonne (écran, PDF, Word).
+  Texte écrit une ligne par bloc :
   « ## titre », « @@ sadr ‖ ʿajuz », « ^^ note », « — Page N — ».
 - Texte collé : découpé en morceaux d'environ 2 500 caractères (`splitText` dans `lib/text.ts`), envoyés
   un par un à Gemini (`vocalizeText`).

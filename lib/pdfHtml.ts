@@ -52,8 +52,24 @@ function line(full: string): string {
   return `<p dir="${dir(body)}">${label}${inline(body)}</p>`;
 }
 
+// Les vers qui se suivent forment un poème : un seul encadré, colonnes alignées.
 function block(text: string): string {
-  return toLines(text).map(line).join("\n");
+  const html: string[] = [];
+  let poem: string[] = [];
+  const endPoem = () => {
+    if (poem.length) html.push(`<div class="poem">${poem.join("")}</div>`);
+    poem = [];
+  };
+  for (const full of toLines(text)) {
+    if (lineStyle(full).kind === "verse") {
+      poem.push(line(full));
+    } else {
+      endPoem();
+      html.push(line(full));
+    }
+  }
+  endPoem();
+  return html.join("\n");
 }
 
 // `fonts` : règles @font-face (police Amiri intégrée au fichier).
@@ -86,8 +102,10 @@ h1.translation { margin-top: 28pt; break-before: page; }
 p { margin: 0 0 10pt; line-height: 2; text-align: justify; orphans: 2; widows: 2; }
 p[dir="ltr"] { font-size: 12pt; line-height: 1.7; }
 h2 { margin: 16pt 0 8pt; text-align: center; font-size: 17pt; color: #145433; break-after: avoid; }
-.verse { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28pt; margin: 0 auto 4pt; max-width: 15cm; font-weight: 700; break-inside: avoid; }
-.verse p { margin: 0; text-align: center; }
+.poem { margin: 12pt auto 14pt; max-width: 15cm; padding: 6pt 16pt; background: #faf6ea; border-right: 3pt solid #c9a227; break-inside: avoid; }
+/* Sadr à droite, ʿajuz à gauche, chacun centré dans sa colonne, avec un large blanc au milieu. */
+.verse { display: grid; grid-template-columns: 1fr 1fr; column-gap: 48pt; font-weight: 700; font-size: 15pt; break-inside: avoid; }
+.verse p { margin: 0; line-height: 2.1; text-align: center; }
 .note { border-top: 1px solid #d6d3d1; padding-top: 4pt; font-size: 11pt; color: #57534e; }
 .page { margin: 10pt 0 6pt; text-align: center; font-size: 8pt; letter-spacing: 2px; color: #a8a29e; }
 .section { margin: 12pt 0 6pt; font-size: 9pt; color: #047857; }

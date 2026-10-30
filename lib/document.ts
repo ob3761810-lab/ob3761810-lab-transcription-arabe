@@ -41,18 +41,22 @@ export function parseStructure(data: unknown, firstPage: number): DocPage[] {
       const text = oneLine(raw?.text);
       const sadr = oneLine(raw?.sadr);
       const ajuz = oneLine(raw?.ajuz);
-      if (type === "vers" && (sadr || ajuz)) {
+      if (type === "vers") {
+        const verse = rebuildVerse(sadr, ajuz, text);
         const previous = blocks[blocks.length - 1];
-        // Moitié de vers qui complète la précédente (l'IA les a rendues séparément).
-        if (previous?.type === "vers" && !previous.ajuz && sadr && !ajuz && !text) {
-          previous.ajuz = sadr;
-        } else if (previous?.type === "vers" && !previous.ajuz && !sadr && ajuz) {
-          previous.ajuz = ajuz;
-        } else {
-          blocks.push({ type: "vers", sadr: sadr || text, ajuz: sadr ? ajuz : "" });
-          if (sadr && text) blocks.push({ type: "paragraphe", text });
+        if (verse && previous?.type === "vers" && !previous.ajuz && !verse.sadr) {
+          // Seconde moitié rendue à part : elle complète le vers précédent.
+          previous.ajuz = verse.ajuz;
+          continue;
         }
-        continue;
+        if (verse && previous?.type === "vers" && !previous.ajuz && !verse.ajuz && !text) {
+          previous.ajuz = verse.sadr;
+          continue;
+        }
+        if (verse) {
+          blocks.push({ type: "vers", ...verse });
+          continue;
+        }
       }
       // Tout autre bloc : son texte, où qu'il soit rangé.
       const content = [text, sadr, ajuz].filter(Boolean).join(" ");
@@ -62,6 +66,44 @@ export function parseStructure(data: unknown, firstPage: number): DocPage[] {
     }
     return { page: firstPage + index, blocks };
   });
+}
+
+// Un vers à partir de ce que l'IA a rempli : sadr et ʿajuz ; ou le vers entier (« text ») avec
+// une seule moitié, dont on déduit l'autre ; ou le vers entier seul, coupé au milieu entre deux mots.
+// Jamais de doublon (avant : moitié + vers entier, affichés deux fois). Un « vers » trop long pour
+// être un vers (commentaire mal rangé) renvoie null : il sera gardé comme paragraphe.
+const MAX_VERSE_WORDS = 16;
+
+export function rebuildVerse(
+  sadr: string,
+  ajuz: string,
+  text: string,
+): { sadr: string; ajuz: string } | null {
+  if (sadr && ajuz) return { sadr, ajuz };
+  // Trop long pour un vers, ou commentaire (« أي … », mot du poème entre parenthèses) mal rangé.
+  if (text && (text.split(" ").length > MAX_VERSE_WORDS || /^أي\s|[()]/.test(text))) return null;
+  if (text && sadr && text.startsWith(sadr) && text.length > sadr.length) {
+    return { sadr, ajuz: text.slice(sadr.length).trim() };
+  }
+  if (text && ajuz && text.endsWith(ajuz) && text.length > ajuz.length) {
+    return { sadr: text.slice(0, -ajuz.length).trim(), ajuz };
+  }
+  if (text && text !== sadr && text !== ajuz) return splitInHalf(text);
+  if (sadr || ajuz || text) return { sadr: sadr || (ajuz ? "" : text), ajuz };
+  return null;
+}
+
+// Coupe un vers écrit d'un seul tenant en deux moitiés de longueur proche, entre deux mots.
+function splitInHalf(line: string): { sadr: string; ajuz: string } {
+  const words = line.split(" ");
+  if (words.length < 2) return { sadr: line, ajuz: "" };
+  let best = 1;
+  for (let i = 1; i < words.length; i++) {
+    const left = words.slice(0, i).join(" ").length;
+    const bestLeft = words.slice(0, best).join(" ").length;
+    if (Math.abs(left - line.length / 2) < Math.abs(bestLeft - line.length / 2)) best = i;
+  }
+  return { sadr: words.slice(0, best).join(" "), ajuz: words.slice(best).join(" ") };
 }
 
 // Les textes à vocaliser, dans l'ordre : un par bloc, deux pour un vers (sadr puis ʿajuz).
