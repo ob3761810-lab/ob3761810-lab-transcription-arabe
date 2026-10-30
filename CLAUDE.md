@@ -60,9 +60,12 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   Pour chaque paquet, deux demandes à Gemini : 1. structure des pages en JSON imposé (`readPdfStructure` :
   titre, paragraphe, vers « sadr *** ʿajuz » dans un seul champ, note), texte recopié sans harakat
   ajoutées ; vers répétés par l'IA retirés, deux vers réunis séparés ; 2. harakat bloc par
-  bloc (`vocalizeList`). Vérification dans `lib/document.ts` : même nombre de blocs, même ordre, mêmes
-  mots. Un mot légèrement changé par l'IA garde les lettres de l'auteur, en rouge (harakat gardées sur le
-  reste du bloc) ; un bloc réécrit reste sans harakat (avertissement). Aucun texte n'est jamais jeté :
+  bloc (`vocalizeList`). Harakat remises MOT PAR MOT (`alignVocalized` dans `lib/document.ts`,
+  alignement des mots dans l'ordre) : le nombre, l'ordre et le type des blocs ne changent jamais, même si
+  l'IA réunit ou coupe des textes ; hamza, ta marbuta et ya ne comptent pas comme un changement ; un mot
+  légèrement changé garde les lettres de l'auteur, en rouge ; un mot réuni/coupé par l'IA reste tel quel ;
+  un bloc dont moins de la moitié des mots sont retrouvés reste sans harakat (avertissement).
+  Même méthode pour les sous-titres (`/api/vocalize`). Aucun texte n'est jamais jeté :
   bloc mal rempli → paragraphe, moitiés de vers réunies, tatweel retiré. Vers rendu en double par l'IA
   (une moitié + le vers entier) ou d'un seul tenant : reconstruit sans doublon (`rebuildVerse`).
   Vers qui se suivent = un poème : encadré doré, hémistiches centrés dans leur colonne (écran, PDF, Word).

@@ -5,6 +5,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CHUNK_SECONDS, splitIntoWavChunks } from "@/lib/audio";
+import { alignVocalized } from "@/lib/document";
 import { isPdf, PageTooLargeError, splitPdf } from "@/lib/pdf";
 import {
   blocksToText,
@@ -443,11 +444,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   }
 
   // Envoie une demande au serveur ; si Google est saturé, attend puis réessaie (comme la transcription).
-  async function withRetry(
+  async function withRetry<T = { text: string }>(
     part: number,
     total: number,
     send: (version: Version) => Promise<Response>,
-  ): Promise<{ text: string }> {
+  ): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const used = versionRef.current;
       const response = await send(used);
@@ -469,37 +470,37 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     }
   }
 
-  // Sous-titres : ajoute les harakat aux paragraphes arabes (une ligne par paragraphe).
-  // Les intertitres et repères de temps ne sont pas envoyés. Si l'IA change le nombre de lignes
-  // ou des mots, les paragraphes restent sans harakat.
+  // Sous-titres : ajoute les harakat aux paragraphes et intertitres arabes (même méthode que les PDF
+  // de livre), puis les remet mot par mot (`alignVocalized`) : hamza et ta marbuta ajoutées sont
+  // acceptées (orthographe) ; un mot changé garde les lettres du conférencier, en rouge ; un mot
+  // réuni ou coupé par l'IA reste tel quel. Les repères de temps ne sont pas envoyés.
   async function vocalizeBlocks(
     blocks: Block[],
     part: number,
     total: number,
-  ): Promise<{ blocks: Block[]; failed: boolean }> {
+  ): Promise<{ blocks: Block[]; failed: number }> {
     const targets = blocks
-      .map((block, index) => (block.kind === "paragraph" && /[\u0600-\u06FF]/.test(block.text) ? index : -1))
+      .map((block, index) => (/[\u0600-\u06FF]/.test(block.text) ? index : -1))
       .filter((index) => index >= 0);
-    if (targets.length === 0) return { blocks, failed: false };
-    const sent = targets.map((index) => blocks[index].text).join("\n");
-    const { text } = await withRetry(part, total, (version) =>
-      fetch(`/api/transcribe?version=${version}&quran=0`, {
+    if (targets.length === 0) return { blocks, failed: 0 };
+    const sent = targets.map((index) => blocks[index].text);
+    const { texts } = await withRetry<{ texts: unknown }>(part, total, (version) =>
+      fetch("/api/vocalize", {
         method: "POST",
-        headers: { "content-type": "text/plain;charset=utf-8" },
-        body: sent,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ texts: sent, version }),
       }),
     );
-    const lines = text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-    const sameWords = checkWords(sent.split(/\s+/), lines.join(" ").split(/\s+/));
-    if (lines.length !== targets.length || sameWords.added > 0 || sameWords.removed > 0) {
-      return { blocks, failed: true };
-    }
+    if (!Array.isArray(texts)) return { blocks, failed: sent.length };
+    // Mot par mot : peu importe si l'IA a réuni ou coupé des paragraphes.
+    const aligned = alignVocalized(
+      sent,
+      texts.map((text) => (typeof text === "string" ? text : "")),
+    );
     const result = [...blocks];
-    targets.forEach((index, k) => (result[index] = { ...blocks[index], text: lines[k] } as Block));
-    return { blocks: result, failed: false };
+    targets.forEach((index, k) => (result[index] = { ...blocks[index], text: aligned.texts[k] } as Block));
+    const failed = aligned.failed;
+    return { blocks: result, failed };
   }
 
   // Sous-titres : traite les morceaux à partir de `nextPart` (mise en forme, harakat, versets).
@@ -534,7 +535,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         if (subHarakat) {
           const vocalized = await vocalizeBlocks(blocks, i + 1, total);
           blocks = vocalized.blocks;
-          harakatFailed = vocalized.failed ? 1 : 0;
+          harakatFailed = vocalized.failed;
         }
         const { text, next } = blocksToText(blocks, stamps, stampNext.current);
         stampNext.current = next;

@@ -155,14 +155,18 @@ export function blockTexts(pages: DocPage[]): string[] {
   );
 }
 
-// Forme d'un mot pour comparer : sans harakat, sans ponctuation, sans marques ⟦ ⟧,
-// avec les formes de l'alif, de la ta marbuta et du ya unifiées.
+// Forme d'un mot pour comparer : sans harakat, sans ponctuation, sans marques ⟦ ⟧, avec les formes
+// de l'alif, de la ta marbuta, du ya et de la hamza unifiées (les sous-titres automatiques écrivent
+// « اشهد ان », « مساله » : ce n'est pas un autre mot que « أَشْهَدُ أَنْ », « مَسْأَلَة »).
 function key(word: string): string {
   return word
     .replace(/[ؐ-ًؚ-ٰٟۖ-ۭـ]/g, "")
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ى/g, "ي")
     .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ء/g, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, "");
 }
@@ -190,55 +194,116 @@ function distance(a: string, b: string): number {
   return previous[b.length];
 }
 
-// Compare un texte et sa version vocalisée, mot par mot.
-// - mêmes mots : la version vocalisée est gardée telle quelle ;
-// - quelques mots légèrement changés par l'IA (lettre mal lue sur le scan, ou orthographe de l'auteur
-//   « corrigée » : 2 lettres au plus, 1 mot sur 4 au plus) : le bloc garde ses harakat, mais ces mots
-//   reprennent les lettres d'origine, entourés de ⟦ ⟧ (en rouge, à vérifier par l'utilisateur) ;
-// - sinon (mots ajoutés, retirés, réécrits) : null, le texte d'origine est gardé.
-export function checkVocalized(before: string, after: string): { text: string; flagged: number } | null {
-  const a = before.split(/\s+/).filter((word) => key(word));
-  const tokens = after.split(/\s+/).filter(Boolean);
-  const b = tokens.map((word, index) => ({ word, index })).filter(({ word }) => key(word));
-  if (a.length !== b.length) return null;
-  const changed: { index: number; original: string }[] = [];
-  for (let i = 0; i < a.length; i++) {
-    const x = key(a[i]);
-    const y = key(b[i].word);
-    if (x === y) continue;
-    if (distance(x, y) > 2) return null;
-    changed.push({ index: b[i].index, original: a[i] });
+// Remet les harakat sur des textes, mot par mot (méthode de l'alignement, comme deux listes mises
+// côte à côte). Les mots d'origine et les mots vocalisés sont mis en correspondance dans l'ordre,
+// sans tenir compte de la façon dont l'IA a coupé ou réuni les textes :
+// - mot retrouvé (mêmes lettres, harakat, hamza et ta marbuta mises à part) : il prend ses harakat ;
+// - mot légèrement changé par l'IA (2 lettres au plus) : les lettres d'origine sont gardées, en rouge ;
+// - mot que l'IA a réuni, coupé ou réécrit : le mot d'origine est gardé tel quel ;
+// - texte dont moins de la moitié des mots sont retrouvés : gardé entièrement tel quel (`failed`).
+// Le nombre et l'ordre des textes d'origine ne changent jamais.
+export function alignVocalized(
+  originals: string[],
+  answers: string[],
+): { texts: string[]; failed: number; flagged: number } {
+  type Word = { item: number; token: number; key: string };
+  const tokens = originals.map((text) => text.split(/\s+/).filter(Boolean));
+  const a: Word[] = [];
+  tokens.forEach((list, item) =>
+    list.forEach((token, index) => {
+      const k = key(token);
+      if (k) a.push({ item, token: index, key: k });
+    }),
+  );
+  const b = answers
+    .flatMap((text) => text.split(/\s+/))
+    .filter((token) => key(token))
+    .map((token) => ({ token, key: key(token) }));
+
+  // Plus longue suite de mots communs (dans l'ordre), calculée de la fin vers le début.
+  const n = a.length;
+  const m = b.length;
+  const width = m + 1;
+  const table = new Uint16Array((n + 1) * width);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      table[i * width + j] =
+        a[i].key === b[j].key
+          ? table[(i + 1) * width + j + 1] + 1
+          : Math.max(table[(i + 1) * width + j], table[i * width + j + 1]);
+    }
   }
-  if (changed.length > Math.max(1, Math.floor(a.length / 4))) return null;
-  for (const { index, original } of changed) {
-    tokens[index] = `⟦${original.replace(/[⟦⟧]/g, "")}⟧`;
+
+  // Ce que devient chaque mot d'origine : mot vocalisé, mot d'origine en rouge, ou inchangé.
+  const result = tokens.map((list) => [...list]);
+  const found = originals.map(() => 0);
+  const counted = originals.map(() => 0);
+  a.forEach((word) => counted[word.item]++);
+  let flagged = 0;
+  // Trou entre deux mots retrouvés : si l'IA a remplacé autant de mots par des mots très proches,
+  // les mots d'origine sont gardés en rouge ; sinon ils restent tels quels.
+  const closeGap = (fromA: number, toA: number, fromB: number, toB: number) => {
+    if (toA - fromA !== toB - fromB) return;
+    for (let k = 0; k < toA - fromA; k++) {
+      if (distance(a[fromA + k].key, b[fromB + k].key) > 2) return;
+    }
+    for (let k = fromA; k < toA; k++) {
+      const word = a[k];
+      result[word.item][word.token] = `⟦${tokens[word.item][word.token].replace(/[⟦⟧]/g, "")}⟧`;
+      flagged++;
+    }
+  };
+  let i = 0;
+  let j = 0;
+  let gapA = 0;
+  let gapB = 0;
+  while (i < n && j < m) {
+    if (a[i].key === b[j].key) {
+      closeGap(gapA, i, gapB, j);
+      result[a[i].item][a[i].token] = b[j].token;
+      found[a[i].item]++;
+      i++;
+      j++;
+      gapA = i;
+      gapB = j;
+    } else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
   }
-  return { text: tokens.join(" "), flagged: changed.length };
+  closeGap(gapA, n, gapB, m);
+
+  let failed = 0;
+  const texts = originals.map((original, item) => {
+    if (counted[item] > 0 && found[item] < counted[item] / 2) {
+      failed++;
+      return original;
+    }
+    return result[item].join(" ");
+  });
+  return { texts, failed, flagged };
 }
 
-// Remet les textes vocalisés dans les blocs, après vérification (voir `checkVocalized`).
-// - réponse illisible ou nombre de textes différent : `ok` faux, rien n'est appliqué ;
-// - un texte réécrit : ce bloc garde le texte d'origine (sans harakat) ;
-// - un mot légèrement corrigé : harakat gardées, mot en rouge (`flagged`).
+// Un seul texte et sa version vocalisée (voir `alignVocalized`) ; null si le texte est réécrit.
+export function checkVocalized(before: string, after: string): { text: string; flagged: number } | null {
+  const { texts, failed, flagged } = alignVocalized([before], [after]);
+  return failed ? null : { text: texts[0], flagged };
+}
+
+// Remet les textes vocalisés dans les blocs, mot par mot (voir `alignVocalized`). Le nombre, l'ordre
+// et le type des blocs ne changent jamais, même si l'IA a réuni ou coupé des textes.
+// `ok` faux seulement si la réponse est illisible (rien n'est appliqué).
 export function applyVocalized(
   pages: DocPage[],
   answer: unknown,
 ): { pages: DocPage[]; ok: boolean; failed: number; flagged: number } {
   const original = blockTexts(pages);
-  if (!Array.isArray(answer) || answer.length !== original.length) {
-    return { pages, ok: false, failed: original.length, flagged: 0 };
-  }
-  let failed = 0;
-  let flagged = 0;
-  const texts = answer.map((item, i) => {
-    const checked = checkVocalized(original[i], oneLine(item));
-    if (checked) {
-      flagged += checked.flagged;
-      return checked.text;
-    }
-    failed++;
-    return original[i];
-  });
+  if (!Array.isArray(answer)) return { pages, ok: false, failed: original.length, flagged: 0 };
+  const { texts, failed, flagged } = alignVocalized(
+    original,
+    answer.map((item) => oneLine(item)),
+  );
   let next = 0;
   const vocalized = pages.map((page) => ({
     page: page.page,
