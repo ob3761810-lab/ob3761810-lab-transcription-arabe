@@ -63,6 +63,10 @@ async function readPdf(
       vocalized = applyVocalized(pages, await vocalizeList(texts, version));
     }
     result = { pages: vocalized.pages, failed: vocalized.failed };
+    // Journal du serveur (sans le texte) : utile pour comprendre un résultat inattendu.
+    console.log(
+      `PDF pages ${first}-${last} : ${pages.map((page) => page.blocks.map((block) => block.type[0]).join("")).join(" | ")}, ${texts.length} textes, ${vocalized.failed} sans harakat, ${vocalized.flagged} mot(s) en rouge`,
+    );
   }
   let text = pagesToText(result.pages);
   try {

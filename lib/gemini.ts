@@ -45,6 +45,8 @@ async function callModel(
         contents: [{ role: "user", parts }],
         generationConfig: {
           temperature: 0,
+          // Réponses longues possibles (plusieurs pages denses) : jamais coupées en route.
+          maxOutputTokens: 32768,
           ...(json ? { responseMimeType: "application/json" } : {}),
           ...(typeof json === "object" ? { responseSchema: json } : {}),
         },
@@ -143,12 +145,14 @@ export async function readPdfStructure(
   const rules = `This PDF contains ${count} page(s) of an Arabic book (it may be a scan). Read every page and return its structure as JSON.
 Rules:
 - One item in "pages" per page of this PDF, in order; "page" is 1 for the first page of this PDF, then 2, and so on.
-- For each page, list its blocks in reading order. Block types:
-  - "titre": a heading, chapter or section title (including a basmala written as a heading). Field "text".
-  - "paragraphe": prose. A whole paragraph of the original is ONE block, even if it has several sentences: join the line breaks inside the paragraph with spaces. Start a new block only where the original starts a new paragraph. Field "text".
-  - "vers": one line of poetry written as two hemistichs side by side. "sadr" is the right-hand hemistich, "ajuz" the left-hand one. One block per line of poetry.
-  - "note": a footnote at the bottom of the page. Field "text".
+- NEVER SKIP ANY TEXT: every printed line of the page (except page numbers and decorations) must appear in exactly one block, in reading order (from the top of the page to the bottom).
+- Block types:
+  - "titre": a heading, chapter or section title. Field "text". If the heading is the basmala written in calligraphy, write it in plain letters: بسم الله الرحمن الرحيم.
+  - "paragraphe": prose, for example the commentary that explains the poem. A whole paragraph of the original is ONE block, even if it has several sentences: join the line breaks inside the paragraph with spaces. Start a new block only where the original starts a new paragraph (a new indented line, often starting with « أي » or with a word of the poem between brackets). Field "text".
+  - "vers": one printed line of the poem. A line of poetry is printed (often in bold) as two halves side by side on the SAME line, separated by a wide blank space. "sadr" = the words on the RIGHT half of that line, "ajuz" = the words on the LEFT half of that same line. One block per printed line of poetry. Never pair a half with a half from another line. A line of poetry is never a "titre", even if it is bold.
+  - "note": a footnote at the bottom of the page, below a short line. Field "text".
 - Copy the text exactly as printed: same words, same spelling, same order. Keep the harakat that are printed, but do not add any. Never correct, translate, summarize or skip anything.
+- Words stretched with a long line for justification (for example الأشـــــاء) are written normally, without the stretching line (الأشياء).
 - Ignore page numbers, running headers and footers, decorative lines and ornaments.
 - If a word is unreadable or you are not sure of it, wrap that single word in ⟦ and ⟧.
 - Never add a verse number, a hadith reference or a scholar's name that is not printed.`;

@@ -60,7 +60,9 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   Pour chaque paquet, deux demandes à Gemini : 1. structure des pages en JSON imposé (`readPdfStructure` :
   titre, paragraphe, vers sadr/ʿajuz, note), texte recopié sans harakat ajoutées ; 2. harakat bloc par
   bloc (`vocalizeList`). Vérification dans `lib/document.ts` : même nombre de blocs, même ordre, mêmes
-  mots ; un bloc modifié reste sans harakat (avertissement). Texte écrit une ligne par bloc :
+  mots. Un mot légèrement changé par l'IA garde les lettres de l'auteur, en rouge (harakat gardées sur le
+  reste du bloc) ; un bloc réécrit reste sans harakat (avertissement). Aucun texte n'est jamais jeté :
+  bloc mal rempli → paragraphe, moitiés de vers réunies, tatweel retiré. Texte écrit une ligne par bloc :
   « ## titre », « @@ sadr ‖ ʿajuz », « ^^ note », « — Page N — ».
 - Texte collé : découpé en morceaux d'environ 2 500 caractères (`splitText` dans `lib/text.ts`), envoyés
   un par un à Gemini (`vocalizeText`).

@@ -70,14 +70,56 @@ test("vocalisation qui coupe un bloc : refusée", () => {
   assert.equal(result.ok, false);
 });
 
-test("vocalisation qui change un mot (« بإسم » → « بسم ») : ce bloc reste tel quel", () => {
+test("vocalisation qui change une lettre (« بإسم » → « بِسْمِ ») : harakat gardées, mot de l'auteur en rouge", () => {
   const pages = parseStructure(STRUCTURE, 1);
   const texts = blockTexts(pages).map(vocalize);
   texts[1] = texts[1].replace("بإسم", "بِسْمِ");
   const result = applyVocalized(pages, texts);
   assert.equal(result.ok, true);
+  assert.equal(result.failed, 0);
+  assert.equal(result.flagged, 1);
+  const paragraph = result.pages[0].blocks[1].text;
+  assert.ok(paragraph.includes("⟦بإسم⟧"), "les lettres de l'auteur sont gardées, en rouge");
+  assert.ok(paragraph.includes("اللَّهِ"), "le reste du bloc garde ses harakat");
+});
+
+test("vocalisation qui réécrit un bloc : ce bloc reste tel quel (sans harakat)", () => {
+  const pages = parseStructure(STRUCTURE, 1);
+  const texts = blockTexts(pages).map(vocalize);
+  texts[6] = "أَيْ قَالَ الشَّيْخُ إِنَّ اللَّهَ يَغْفِرُ الذُّنُوبَ جَمِيعًا";
+  const result = applyVocalized(pages, texts);
   assert.equal(result.failed, 1);
-  assert.equal(result.pages[0].blocks[1].text, pages[0].blocks[1].text);
+  assert.equal(result.pages[0].blocks[4].text, pages[0].blocks[4].text);
+});
+
+test("structure mal remplie par l'IA : aucun texte perdu, moitiés de vers réunies, tatweel retiré", () => {
+  // Cas réel (ESSAIE.pdf) : paragraphe rangé comme « vers » avec un champ « text », vers rendu
+  // en deux moitiés séparées, mot étiré « الأشـــــاء », type inconnu.
+  const pages = parseStructure(
+    {
+      pages: [
+        {
+          page: 1,
+          blocks: [
+            { type: "paragraphe", text: "أي أنظم الأشـــــاء الآتـــــة" },
+            { type: "vers", sadr: "يقول راجي رحمة الغفور", ajuz: "" },
+            { type: "vers", sadr: "", ajuz: "دوماً سليمان هو الجمزوري" },
+            { type: "vers", text: "أي ( يقول ) مؤمل إحسان ربه الغفور" },
+            { type: "paragraphe", sadr: "(الحمد لله) أي الثناء الحسن" },
+            { type: "inconnu", text: "(مصلياً) أي طالباً من الله" },
+          ],
+        },
+      ],
+    },
+    1,
+  );
+  const text = pagesToText(pages);
+  assert.ok(text.includes("أي أنظم الأشاء الآتة"), "tatweel retiré");
+  assert.ok(text.includes("@@ يقول راجي رحمة الغفور ‖ دوماً سليمان هو الجمزوري"), "vers réuni");
+  for (const kept of ["مؤمل إحسان ربه الغفور", "(الحمد لله) أي الثناء الحسن", "(مصلياً) أي طالباً من الله"]) {
+    assert.ok(text.includes(kept), `texte gardé : ${kept}`);
+  }
+  assert.deepEqual(countBlocks(text), { titre: 0, paragraphe: 4, vers: 1, note: 0 });
 });
 
 test("traduction : vers écrits « sadr — ʿajuz », sans préfixes de mise en page", () => {
