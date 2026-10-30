@@ -11,7 +11,8 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
 2. L'application le transcrit (arabe, français, anglais, y compris mélangés).
 3. Les harakat sont ajoutées sur l'arabe, avec un interrupteur « Avec harakat / Sans harakat ».
 4. Je peux traduire le texte (français, anglais, arabe).
-5. Je peux télécharger le texte en PDF ou en Word (modifiable).
+5. Je peux télécharger le texte en PDF (vrai PDF fabriqué par le serveur : titre, pagination, aucun
+   élément d'interface) ou en Word (modifiable).
 6. Je peux écouter ou regarder le fichier dans la page, avec un minutage cliquable toutes les 2 minutes.
    Avant la transcription : lecteur juste sous la zone de dépôt. Ensuite, sur ordinateur : texte à gauche,
    lecteur à droite (toujours visible) ; sur téléphone : lecteur au-dessus. La lecture continue au déplacement.
@@ -39,6 +40,11 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
    - versets du Coran détectés ; titre modifiable ; bouton « Modifier le texte » (modification libre) ;
      export Word et PDF.
 
+10. PDF de livre (texte ou scan) : la mise en page d'origine est gardée. Titres, paragraphes (un
+    paragraphe reste un seul bloc), vers en deux hémistiches côte à côte (sadr à droite, ʿajuz à gauche,
+    en gras), notes de bas de page. Numéros de page et traits décoratifs ignorés. Même mise en page à
+    l'écran, dans le Word (tableau sans bordure pour les vers) et dans le PDF.
+
 Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Facebook, TikTok) pour le redonner à l'utilisateur.
 
 ## Choix techniques
@@ -50,16 +56,25 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
   et propose à l'utilisateur de passer en version légère.
 - Le fichier est préparé dans le navigateur (`lib/audio.ts`) : son extrait, mono 16 kHz, découpé en
   extraits de 2 minutes (limite de 4,5 Mo par envoi sur Vercel). Aucun fichier n'est stocké.
-- PDF déposé : découpé dans le navigateur en paquets de 3 pages (bibliothèque `pdf-lib`, `lib/pdf.ts`),
-  chacun envoyé à Gemini qui renvoie le texte avec les harakat, page par page.
+- PDF déposé : découpé dans le navigateur en paquets de 3 pages (bibliothèque `pdf-lib`, `lib/pdf.ts`).
+  Pour chaque paquet, deux demandes à Gemini : 1. structure des pages en JSON imposé (`readPdfStructure` :
+  titre, paragraphe, vers sadr/ʿajuz, note), texte recopié sans harakat ajoutées ; 2. harakat bloc par
+  bloc (`vocalizeList`). Vérification dans `lib/document.ts` : même nombre de blocs, même ordre, mêmes
+  mots ; un bloc modifié reste sans harakat (avertissement). Texte écrit une ligne par bloc :
+  « ## titre », « @@ sadr ‖ ʿajuz », « ^^ note », « — Page N — ».
 - Texte collé : découpé en morceaux d'environ 2 500 caractères (`splitText` dans `lib/text.ts`), envoyés
   un par un à Gemini (`vocalizeText`).
-- PDF téléchargé : impression du navigateur (« Enregistrer au format PDF »), qui affiche parfaitement l'arabe.
+- PDF téléchargé : fabriqué par le serveur (`app/api/pdf`, page `lib/pdfHtml.ts`) avec Chrome pour serveur
+  (`puppeteer-core` 25.11 + `@sparticuz/chromium` 153, mêmes versions de Chrome), police Amiri intégrée
+  (`data/fonts`, licence OFL). Secours : impression du navigateur. En local : `CHROMIUM_PATH`.
 - Word : bibliothèque `docx` (`lib/word.ts`), fichier créé dans le navigateur, arabe en droite-à-gauche.
 - Versets : fichier officiel Tanzil « Simple » (`data/quran-simple.txt`, CC BY 3.0) gardé tel quel,
   avec son bloc de licence ; source citée dans le pied de page avec un lien vers tanzil.net.
   Détection sans IA dans `lib/quran.ts` (normalisation, index de suites de 3 mots, tolérance réglable
   dans `SETTINGS`), appliquée côté serveur dans `app/api/transcribe/route.ts`. Tests : `npm test`.
+  Basmala et isti'adha remplacées seulement seules sur leur ligne ou en tête de ligne ; passage de moins
+  de 8 mots : correspondance exacte obligatoire (aucune lettre de l'auteur changée) ; détection bloc
+  par bloc (`replaceQuranInBlocks`), jamais dans les vers.
 - Sous-titres : nettoyage sans IA dans `lib/subtitles.ts` (lecture, doublons, paragraphes, morceaux
   d'environ 1 500 mots coupés à une fin de phrase ou au plus long silence, contrôle des mots) ;
   mise en forme par l'IA dans `formatSubtitles` (`lib/gemini.ts`, prompt système strict), via `/api/format` ;

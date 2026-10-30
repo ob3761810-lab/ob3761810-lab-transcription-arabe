@@ -33,6 +33,8 @@ import {
   splitMarks,
   splitWords,
   lineStyle,
+  plainLines,
+  splitVerse,
   toEditable,
   fromEditable,
   splitText,
@@ -162,49 +164,90 @@ function Lines({
   return (
     <div className={spacious ? "space-y-5" : "space-y-2"}>
       {lines.map(({ line, start }, index) => {
-        // Sous-titres : intertitre (« ## ») ou repère de temps (« [4:05] ») en début de ligne.
-        const { heading, stamp, skip } = lineStyle(line);
-        const lineStart = start + skip;
+        // Genre de la ligne : titre (« ## »), vers (« @@ sadr ‖ ʿajuz »), note (« ^^ »),
+        // repère de page (« — Page 3 — ») ou paragraphe (avec repère de temps « [4:05] »).
+        const { kind, stamp, skip } = lineStyle(line);
         const body = line.slice(skip);
-        const content = splitMarks(body).map((segment, i) => {
-          if (segment.kind === "quran") {
+        // Morceau de texte avec ses mots marqués, versets et mots cliquables.
+        // `offset` : position du morceau dans le texte d'origine (pour retrouver le mot cliqué).
+        const inline = (piece: string, offset: number) =>
+          splitMarks(piece).map((segment, i) => {
+            if (segment.kind === "quran") {
+              return (
+                <span key={i}>
+                  {renderQuran(quranNumber++, { ...segment, text: show(segment.text) })}
+                </span>
+              );
+            }
+            if (segment.kind !== "normal") {
+              return (
+                <span key={i}>{renderMark(markNumber++, show(segment.text), segment.kind)}</span>
+              );
+            }
+            if (!renderWord) return <Fragment key={i}>{show(segment.text)}</Fragment>;
             return (
-              <span key={i}>
-                {renderQuran(quranNumber++, { ...segment, text: show(segment.text) })}
-              </span>
+              <Fragment key={i}>
+                {splitWords(segment.text).map((word) => {
+                  const wordStart = offset + segment.start + word.start;
+                  return word.word ? (
+                    <Fragment key={word.start}>
+                      {renderWord(wordStart, wordStart + word.text.length, show(word.text))}
+                    </Fragment>
+                  ) : (
+                    show(word.text)
+                  );
+                })}
+              </Fragment>
             );
-          }
-          if (segment.kind !== "normal") {
-            return (
-              <span key={i}>{renderMark(markNumber++, show(segment.text), segment.kind)}</span>
-            );
-          }
-          if (!renderWord) return <Fragment key={i}>{show(segment.text)}</Fragment>;
-          return (
-            <Fragment key={i}>
-              {splitWords(segment.text).map((piece) => {
-                const wordStart = lineStart + segment.start + piece.start;
-                return piece.word ? (
-                  <Fragment key={piece.start}>
-                    {renderWord(wordStart, wordStart + piece.text.length, show(piece.text))}
-                  </Fragment>
-                ) : (
-                  show(piece.text)
-                );
-              })}
-            </Fragment>
-          );
-        });
+          });
         const arabic = isArabic(body);
-        if (heading) {
+        if (kind === "page") {
+          return (
+            <p
+              key={index}
+              className="pt-2 text-center font-sans text-xs tracking-widest text-stone-400"
+            >
+              {body.trim()}
+            </p>
+          );
+        }
+        if (kind === "verse") {
+          // Vers : sadr à droite, ʿajuz à gauche, en gras.
+          // Les vers qui se suivent restent serrés : le poème se lit d'un bloc.
+          const { sadr, ajuz, ajuzStart } = splitVerse(body);
+          const nextIsVerse = lines[index + 1]?.line.startsWith("@@ ");
+          return (
+            <div
+              key={index}
+              dir="rtl"
+              className={`verse font-arabic mx-auto grid max-w-2xl grid-cols-2 gap-x-10 bg-gold-100/40 px-4 text-2xl leading-[2.2] font-bold ${nextIsVerse ? "mb-0! pt-1" : "pb-1"} ${lines[index - 1]?.line.startsWith("@@ ") ? "" : "rounded-t-lg pt-1"} ${nextIsVerse ? "" : "rounded-b-lg"}`}
+            >
+              <p className="text-center">{inline(sadr, start + skip)}</p>
+              <p className="text-center">{inline(ajuz, start + skip + ajuzStart)}</p>
+            </div>
+          );
+        }
+        const content = inline(body, start + skip);
+        if (kind === "heading") {
           return (
             <h3
               key={index}
               dir={arabic ? "rtl" : "ltr"}
-              className={`pt-3 font-semibold text-brand-800 ${arabic ? "font-arabic text-2xl" : "text-xl"}`}
+              className={`pt-3 text-center font-semibold text-brand-800 ${arabic ? "font-arabic text-2xl" : "text-xl"}`}
             >
               {content}
             </h3>
+          );
+        }
+        if (kind === "note") {
+          return (
+            <p
+              key={index}
+              dir={arabic ? "rtl" : "ltr"}
+              className={`border-t border-stone-200 pt-2 text-stone-600 ${arabic ? "font-arabic text-lg leading-loose" : "text-sm"}`}
+            >
+              {content}
+            </p>
           );
         }
         const label = stamp && (
@@ -246,6 +289,8 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   const [title, setTitle] = useState("");
   // Bilan du nettoyage : contrôle des mots, passages refusés à l'IA, harakat non ajoutées.
   const [subReport, setSubReport] = useState<SubReport | null>(null);
+  // PDF : nombre de textes laissés sans harakat (l'IA avait changé des mots).
+  const [unvocalized, setUnvocalized] = useState(0);
   // Texte en cours de modification libre (null : aperçu normal).
   const [freeEdit, setFreeEdit] = useState<string | null>(null);
   // Morceaux de sous-titres (environ 1 500 mots) et prochain repère des 5 minutes.
@@ -273,6 +318,10 @@ export default function Transcriber({ ready }: { ready: boolean }) {
   }
   const shown = (text: string) => (withHarakat ? text : removeHarakat(text));
   const [wordError, setWordError] = useState("");
+  // PDF fabriqué par le serveur : en cours, ou message d'erreur.
+  const [pdfState, setPdfState] = useState<{ step: "idle" | "making" | "error" }>({
+    step: "idle",
+  });
   // Relecture : corrections proposées pour chaque mot repéré, et état de la relecture.
   const [suggestions, setSuggestions] = useState<Record<string, Issue>>({});
   // `found` : nombre de mots signalés par la relecture.
@@ -360,7 +409,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     chunk: Blob,
     part: number,
     total: number,
-  ): Promise<{ text: string; lite: boolean }> {
+  ): Promise<{ text: string; lite: boolean; unvocalized?: number }> {
     for (let attempt = 0; ; attempt++) {
       const used = versionRef.current;
       const pages = pageRanges.current?.[part - 1];
@@ -574,8 +623,13 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     try {
       for (let i = nextPart.current; i < total; i++) {
         setStatus({ step: "transcribing", part: i + 1, total, waiting: null });
-        const { text: partText, lite } = await transcribePart(chunks.current[i], i + 1, total);
+        const {
+          text: partText,
+          lite,
+          unvocalized = 0,
+        } = await transcribePart(chunks.current[i], i + 1, total);
         collected[i] = partText;
+        setUnvocalized((previous) => previous + unvocalized);
         setParts((previous) => [...previous.slice(0, i), partText]);
         setLiteParts((previous) => [...previous.slice(0, i), lite]);
         nextPart.current = i + 1;
@@ -609,6 +663,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     setTranslationError("");
     setSubReport(null);
     setFreeEdit(null);
+    setUnvocalized(0);
 
     if (subMode) {
       await startSubtitles();
@@ -1025,7 +1080,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
       // La bibliothèque Word n'est chargée qu'au moment du clic, pour garder la page légère.
       const { buildWordFile } = await import("@/lib/word");
       const blob = await buildWordFile({
-        title: subMode ? title.trim() || "Sous-titres" : undefined,
+        title: subMode
+          ? title.trim() || "Sous-titres"
+          : vocalizeOnly
+            ? "Texte avec harakat"
+            : undefined,
         fileName: subMode
           ? (subFile?.name ?? "Sous-titres collés")
           : textMode || !file
@@ -1052,6 +1111,69 @@ export default function Transcriber({ ready }: { ready: boolean }) {
     }
   }
 
+  // Télécharge un vrai PDF, fabriqué par le serveur (même contenu que l'écran, sans interface).
+  async function handlePdfDownload() {
+    const docTitle = subMode
+      ? title.trim() || "Sous-titres"
+      : vocalizeOnly
+        ? "Texte avec harakat"
+        : "Transcription";
+    const fileName = subMode
+      ? (subFile?.name ?? "Sous-titres collés")
+      : textMode || !file
+        ? "Texte collé"
+        : file.name;
+    const notices: { text: string; tone: "amber" | "red" | "green" }[] = [
+      {
+        text: "Texte non relu : il peut contenir des erreurs de transcription ou de harakat.",
+        tone: "amber",
+      },
+    ];
+    if (doubtCount > 0) {
+      notices.push({
+        text: "En rouge : mots dont l'orthographe ou les harakat sont à vérifier.",
+        tone: "red",
+      });
+    }
+    if (hasQuran) {
+      notices.push({
+        text: "En vert, entre ﴿ ﴾ : versets du Coran remplacés par le texte officiel de Tanzil (tanzil.net), avec leur référence.",
+        tone: "green",
+      });
+    }
+    setPdfState({ step: "making" });
+    try {
+      const response = await fetch("/api/pdf", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: docTitle,
+          subtitle: fileName,
+          notices,
+          sections: parts
+            .map((text, index) => ({
+              label: pdfMode && text.includes("— Page") ? "" : (sectionLabels[index] ?? ""),
+              text: shown(text),
+            }))
+            .filter((section) => section.text.trim() !== ""),
+          translation: translation && { label: translation.label, text: shown(translation.text) },
+        }),
+      });
+      if (!response.ok) throw new Error(`PDF : ${response.status}`);
+      const blob = await response.blob();
+      const baseName = subMode ? docTitle : fileName.replace(/\.[^.]+$/, "");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${baseName}${subMode ? "" : vocalizeOnly ? " - harakat" : " - transcription"}.pdf`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setPdfState({ step: "idle" });
+    } catch (error) {
+      console.error(error);
+      setPdfState({ step: "error" });
+    }
+  }
+
   async function handleTranslate(code: string, label: string) {
     setTranslating(true);
     setTranslationError("");
@@ -1060,7 +1182,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          text: removeMarks(transcript),
+          text: plainLines(removeMarks(transcript)),
           language: code,
           version: versionRef.current,
         }),
@@ -1441,6 +1563,12 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                     ` ${subReport.duplicates.toLocaleString("fr-FR")} mots répétés par les sous-titres automatiques ont été retirés.`}
                 </p>
               )}
+              {unvocalized > 0 && (
+                <p className="no-print mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+                  ⚠ {unvocalized} bloc(s) sont affichés sans harakat : l&apos;IA avait changé des mots
+                  en les vocalisant, ils ont donc été gardés tels qu&apos;écrits dans le PDF.
+                </p>
+              )}
               {subMode && subReport && subReport.refused > 0 && (
                 <p className="no-print mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
                   ⚠ {subReport.refused} passage(s) n&apos;ont pas été mis en forme par l&apos;IA, car
@@ -1604,7 +1732,7 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                         renderMark={renderMark(index)}
                         renderQuran={renderQuran(index)}
                         renderWord={renderWord(index)}
-                        spacious={subMode}
+                        spacious={subMode || pdfMode}
                       />
                     </div>
                   ),
@@ -1654,10 +1782,11 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button
                     type="button"
-                    onClick={() => window.print()}
-                    className="rounded-2xl bg-brand-700 px-6 py-3 font-medium text-white shadow-md shadow-brand-900/20 transition hover:bg-brand-800"
+                    onClick={handlePdfDownload}
+                    disabled={pdfState.step === "making"}
+                    className="rounded-2xl bg-brand-700 px-6 py-3 font-medium text-white shadow-md shadow-brand-900/20 transition hover:bg-brand-800 disabled:cursor-wait disabled:opacity-70"
                   >
-                    Télécharger en PDF
+                    {pdfState.step === "making" ? "Création du PDF…" : "Télécharger en PDF"}
                   </button>
                   <button
                     type="button"
@@ -1668,10 +1797,22 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                   </button>
                 </div>
                 <p className="mt-2 text-sm text-stone-500">
-                  PDF : dans la fenêtre qui s&apos;ouvre, choisissez « Enregistrer au format PDF »
-                  comme imprimante. Word : le fichier se télécharge directement et peut être
-                  modifié.
+                  PDF : prêt à lire et à imprimer (quelques secondes de fabrication). Word : peut
+                  être modifié.
                 </p>
+                {pdfState.step === "error" && (
+                  <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
+                    Le PDF n&apos;a pas pu être créé. Réessayez dans un instant, ou{" "}
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="font-medium underline"
+                    >
+                      imprimez depuis le navigateur
+                    </button>{" "}
+                    (choisissez « Enregistrer au format PDF »).
+                  </p>
+                )}
                 {wordError && (
                   <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">
                     {wordError}

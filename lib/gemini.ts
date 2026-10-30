@@ -20,12 +20,13 @@ export class BusyError extends Error {}
 
 type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-// `json` : demande à Google une réponse au format JSON (pour la relecture).
+// `json` : demande à Google une réponse au format JSON (pour la relecture) ; un objet impose en plus
+// la forme exacte de la réponse (schéma).
 // `system` : consignes générales (prompt système), plus strictes que le texte de la demande.
 async function callModel(
   model: string,
   parts: GeminiPart[],
-  json = false,
+  json: boolean | object = false,
   system?: string,
 ): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -34,7 +35,8 @@ async function callModel(
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    // GEMINI_API_URL : seulement pour les tests (faux Gemini local). Par défaut, Google.
+    `${process.env.GEMINI_API_URL || "https://generativelanguage.googleapis.com"}/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
@@ -44,6 +46,7 @@ async function callModel(
         generationConfig: {
           temperature: 0,
           ...(json ? { responseMimeType: "application/json" } : {}),
+          ...(typeof json === "object" ? { responseSchema: json } : {}),
         },
       }),
     },
@@ -71,7 +74,7 @@ async function callModel(
 async function askGemini(
   parts: GeminiPart[],
   version: Version,
-  json = false,
+  json: boolean | object = false,
   system?: string,
 ): Promise<string> {
   return callModel(version === "legere" ? LITE_MODEL : MODEL, parts, json, system);
@@ -98,33 +101,88 @@ export async function transcribeWithHarakat(audio: ArrayBuffer, version: Version
   );
 }
 
-// Lecture d'un PDF (texte ou scan) : texte de chaque page avec les harakat sur l'arabe.
+// Lecture d'un PDF (texte ou scan), étape 1 : structure de chaque page, sans ajouter de harakat.
 // `pdf` contient les pages `firstPage` à `lastPage` du document d'origine.
-export async function vocalizePdf(
+const STRUCTURE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    pages: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          page: { type: "INTEGER" },
+          blocks: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                type: { type: "STRING", enum: ["titre", "paragraphe", "vers", "note"] },
+                text: { type: "STRING" },
+                sadr: { type: "STRING" },
+                ajuz: { type: "STRING" },
+              },
+              required: ["type"],
+            },
+          },
+        },
+        required: ["page", "blocks"],
+      },
+    },
+  },
+  required: ["pages"],
+};
+
+export async function readPdfStructure(
   pdf: ArrayBuffer,
   version: Version,
   firstPage: number,
   lastPage: number,
-): Promise<string> {
-  const rules = `This PDF contains pages ${firstPage} to ${lastPage} of a document.
-Copy the text of every page, in reading order.
+): Promise<unknown> {
+  const count = lastPage - firstPage + 1;
+  const rules = `This PDF contains ${count} page(s) of an Arabic book (it may be a scan). Read every page and return its structure as JSON.
 Rules:
-- Before the text of each page, write a line containing only: — Page N — (N = ${firstPage} for the first page of this PDF, then ${firstPage + 1}, and so on).
-- Keep the words exactly as written. Never translate, never summarize, never skip a passage.
-- Add full harakat (tashkil) to every Arabic word, according to the grammar of the sentence. Keep a harakah already written in the PDF unless it is clearly wrong.
-- Do not add anything to French or English words.
-- Start a new line at the end of each sentence or line of verse.
-- If you are not sure about the spelling or the harakat of an Arabic word, wrap that single word in ⟦ and ⟧. Do this only for genuinely uncertain words.
-- Ignore page headers, footers and page numbers printed on the page.
-- Output only the text: no title, no comment, no explanation.
-- Never add a verse number, a hadith reference or a scholar's name that is not written in the PDF.`;
-  return askGemini(
+- One item in "pages" per page of this PDF, in order; "page" is 1 for the first page of this PDF, then 2, and so on.
+- For each page, list its blocks in reading order. Block types:
+  - "titre": a heading, chapter or section title (including a basmala written as a heading). Field "text".
+  - "paragraphe": prose. A whole paragraph of the original is ONE block, even if it has several sentences: join the line breaks inside the paragraph with spaces. Start a new block only where the original starts a new paragraph. Field "text".
+  - "vers": one line of poetry written as two hemistichs side by side. "sadr" is the right-hand hemistich, "ajuz" the left-hand one. One block per line of poetry.
+  - "note": a footnote at the bottom of the page. Field "text".
+- Copy the text exactly as printed: same words, same spelling, same order. Keep the harakat that are printed, but do not add any. Never correct, translate, summarize or skip anything.
+- Ignore page numbers, running headers and footers, decorative lines and ornaments.
+- If a word is unreadable or you are not sure of it, wrap that single word in ⟦ and ⟧.
+- Never add a verse number, a hadith reference or a scholar's name that is not printed.`;
+  const answer = await askGemini(
     [
       { inline_data: { mime_type: "application/pdf", data: Buffer.from(pdf).toString("base64") } },
       { text: rules },
     ],
     version,
+    STRUCTURE_SCHEMA,
   );
+  return JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+}
+
+// Lecture d'un PDF, étape 2 : harakat ajoutées texte par texte. La réponse doit avoir exactement
+// le même nombre de textes, dans le même ordre (vérifié ensuite par lib/document.ts).
+export async function vocalizeList(texts: string[], version: Version): Promise<unknown> {
+  const rules = `Add full harakat (tashkil) to each text of this JSON array, taken from an Arabic book (prose, headings and lines of poetry).
+Answer with a JSON array of strings with EXACTLY ${texts.length} items, in the same order: item number i of the answer is item number i of the input with harakat.
+Rules:
+- Never merge, split, add or remove items.
+- Keep every word exactly as written, in the same order. Never translate, summarize or correct the wording.
+- Keep the harakat already written and add the missing ones, according to the grammar of the sentence (and the metre for poetry).
+- Keep the ⟦ ⟧ marks. If you are not sure about the harakat of a word, wrap that single word in ⟦ and ⟧.
+- Do not add anything to French or English words.
+- Never add a verse number, a hadith reference or a scholar's name.
+
+Texts:
+${JSON.stringify(texts)}`;
+  const answer = await askGemini([{ text: rules }], version, {
+    type: "ARRAY",
+    items: { type: "STRING" },
+  });
+  return JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
 }
 
 // Texte collé par l'utilisateur : on ajoute les harakat sans rien changer d'autre.

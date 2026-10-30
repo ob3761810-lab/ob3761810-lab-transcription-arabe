@@ -1,8 +1,20 @@
 // Fabrique le fichier Word (.docx) dans le navigateur, avec le même contenu que le PDF.
 // L'arabe est écrit de droite à gauche, le français et l'anglais de gauche à droite.
 
-import { AlignmentType, Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
-import { isArabic, lineStyle, quranBrackets, splitMarks, toLines } from "@/lib/text";
+import {
+  AlignmentType,
+  BorderStyle,
+  Document,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  WidthType,
+} from "docx";
+import { isArabic, lineStyle, quranBrackets, splitMarks, splitVerse, toLines } from "@/lib/text";
 
 export type WordContent = {
   title?: string; // titre du document (sous-titres) ; sinon « Transcription »
@@ -21,20 +33,19 @@ const RED = "DC2626";
 const QURAN_COLOR = "145433";
 const REFERENCE_COLOR = "7A5F12";
 
-// Une ligne du texte : paragraphe, intertitre (« ## ») ou paragraphe avec repère de temps (« [4:05] »).
-function line(full: string): Paragraph {
-  const { heading: isHeading, stamp, skip } = lineStyle(full);
-  const text = full.slice(skip);
-  const arabic = isArabic(text);
+// Morceaux de texte (TextRun) d'une ligne : texte normal, mots en rouge, versets en vert.
+function runsOf(text: string, arabic: boolean, bold = false): TextRun[] {
   const style = arabic
     ? {
         rightToLeft: true,
         size: 32,
         sizeComplexScript: 32,
         language: { bidirectional: "ar-SA" },
+        bold,
+        boldComplexScript: bold,
       }
-    : { size: 24, sizeComplexScript: 28 };
-  const runs = splitMarks(text).flatMap((segment) => {
+    : { size: 24, sizeComplexScript: 28, bold, boldComplexScript: bold };
+  return splitMarks(text).flatMap((segment) => {
     if (segment.kind === "quran" && segment.on) {
       return [
         new TextRun({ text: quranBrackets(segment.text, segment.reference), font: FONT, color: QURAN_COLOR, ...style }),
@@ -56,12 +67,71 @@ function line(full: string): Paragraph {
       }),
     ];
   });
-  if (isHeading) {
+}
+
+const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+
+// Vers de poésie : tableau sans bordure à deux colonnes, de droite à gauche (sadr à droite), en gras.
+function verse(body: string): Table {
+  const { sadr, ajuz } = splitVerse(body);
+  const cell = (text: string) =>
+    new TableCell({
+      width: { size: 50, type: WidthType.PERCENTAGE },
+      borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER },
+      children: [
+        new Paragraph({
+          bidirectional: true,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 60, line: 400 },
+          children: runsOf(text, true, true),
+        }),
+      ],
+    });
+  return new Table({
+    visuallyRightToLeft: true,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: NO_BORDER,
+      bottom: NO_BORDER,
+      left: NO_BORDER,
+      right: NO_BORDER,
+      insideHorizontal: NO_BORDER,
+      insideVertical: NO_BORDER,
+    },
+    rows: [new TableRow({ children: [cell(sadr), cell(ajuz)] })],
+  });
+}
+
+// Une ligne du texte : paragraphe, titre (« ## »), vers (« @@ »), note (« ^^ »), repère de page,
+// ou paragraphe avec repère de temps (« [4:05] »).
+function line(full: string): Paragraph | Table {
+  const { kind, stamp, skip } = lineStyle(full);
+  const text = full.slice(skip);
+  const arabic = isArabic(text);
+  if (kind === "verse") return verse(text);
+  if (kind === "page") {
+    return new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 240, after: 120 },
+      children: [new TextRun({ text: text.trim(), font: FONT, size: 16, color: "A8A29E" })],
+    });
+  }
+  const runs = runsOf(text, arabic);
+  if (kind === "heading") {
     return new Paragraph({
       heading: HeadingLevel.HEADING_2,
       bidirectional: arabic,
-      alignment: AlignmentType.START,
+      alignment: AlignmentType.CENTER,
       spacing: { before: 360, after: 160 },
+      children: runs,
+    });
+  }
+  if (kind === "note") {
+    return new Paragraph({
+      bidirectional: arabic,
+      alignment: AlignmentType.START,
+      spacing: { before: 120, after: 120 },
+      border: { top: { style: BorderStyle.SINGLE, size: 4, color: "D6D3D1", space: 4 } },
       children: runs,
     });
   }
@@ -104,7 +174,7 @@ export async function buildWordFile({
   sections,
   translation,
 }: WordContent): Promise<Blob> {
-  const paragraphs: Paragraph[] = [
+  const paragraphs: (Paragraph | Table)[] = [
     heading(title ?? "Transcription"),
     note(fileName, "71717A"),
     note("Texte non relu : il peut contenir des erreurs de transcription ou de harakat.", "B45309"),

@@ -167,11 +167,51 @@ export function splitText(text: string, size = 2500): string[] {
   return pieces.filter((piece) => piece.trim() !== "");
 }
 
-// Sous-titres : une ligne « ## … » est un intertitre ; « [4:05] » au début d'une ligne est un repère de temps.
-export function lineStyle(line: string): { heading: boolean; stamp: string | null; skip: number } {
-  if (line.startsWith("## ")) return { heading: true, stamp: null, skip: 3 };
+// Genre d'une ligne de texte :
+// « ## … » titre ou intertitre ; « @@ sadr ‖ ʿajuz » vers de poésie (PDF) ; « ^^ … » note de bas de
+// page (PDF) ; « — Page 3 — » repère de page (PDF) ; « [4:05] … » paragraphe avec repère de temps
+// (sous-titres) ; sinon paragraphe. `skip` : longueur du préfixe à ne pas afficher.
+export type LineKind = "heading" | "verse" | "note" | "page" | "text";
+
+export function lineStyle(line: string): {
+  kind: LineKind;
+  heading: boolean;
+  stamp: string | null;
+  skip: number;
+} {
+  if (line.startsWith("## ")) return { kind: "heading", heading: true, stamp: null, skip: 3 };
+  if (line.startsWith("@@ ")) return { kind: "verse", heading: false, stamp: null, skip: 3 };
+  if (line.startsWith("^^ ")) return { kind: "note", heading: false, stamp: null, skip: 3 };
+  if (/^— Page \d+ —$/.test(line.trim())) return { kind: "page", heading: false, stamp: null, skip: 0 };
   const stamp = line.match(/^\[(\d+:\d{2}(?::\d{2})?)\] /);
-  return { heading: false, stamp: stamp?.[1] ?? null, skip: stamp?.[0].length ?? 0 };
+  return { kind: "text", heading: false, stamp: stamp?.[1] ?? null, skip: stamp?.[0].length ?? 0 };
+}
+
+// Vers « sadr ‖ ʿajuz » : les deux hémistiches et la position du second dans `body`.
+export const VERSE_SEPARATOR = " ‖ ";
+export function splitVerse(body: string): { sadr: string; ajuz: string; ajuzStart: number } {
+  const at = body.indexOf(VERSE_SEPARATOR);
+  if (at === -1) return { sadr: body, ajuz: "", ajuzStart: body.length };
+  return {
+    sadr: body.slice(0, at),
+    ajuz: body.slice(at + VERSE_SEPARATOR.length),
+    ajuzStart: at + VERSE_SEPARATOR.length,
+  };
+}
+
+// Texte pour la traduction : sans préfixes de mise en page (vers écrits « sadr — ʿajuz »).
+export function plainLines(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => lineStyle(line).kind !== "page")
+    .map((line) => {
+      const { kind, skip } = lineStyle(line);
+      const body = line.slice(skip);
+      if (kind !== "verse") return line.startsWith("## ") || line.startsWith("^^ ") ? body : line;
+      const { sadr, ajuz } = splitVerse(body);
+      return `${sadr} — ${ajuz}`;
+    })
+    .join("\n");
 }
 
 // Texte à modifier librement : un paragraphe par bloc, versets écrits « ﴿…﴾ (référence) »,

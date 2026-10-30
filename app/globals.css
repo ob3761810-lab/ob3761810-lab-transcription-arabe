@@ -71,8 +71,14 @@ body {
   #document {
     margin-top: 0 !important;
   }
+  /* On évite de couper une ligne ou un vers, mais jamais tout le texte d'un bloc (sinon la
+     première page reste vide). */
   #document p,
-  #document div {
+  #document .verse {
     break-inside: avoid;
+  }
+  /* Barre d'outils de Vercel (adresses de test) : jamais imprimée. */
+  vercel-live-feedback {
+    display: none !important;
   }
 }
