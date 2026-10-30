@@ -38,6 +38,19 @@ export default function Home() {
         </span>{" "}
         · Harakat Nass — Les textes produits par l&apos;intelligence artificielle doivent être
         relus.
+        <br />
+        Texte coranique : Tanzil Quran Text (Simple), ©{" "}
+        <a href="https://tanzil.net" className="underline hover:text-brand-700">
+          Tanzil Project
+        </a>
+        , licence{" "}
+        <a
+          href="https://creativecommons.org/licenses/by/3.0/"
+          className="underline hover:text-brand-700"
+        >
+          CC BY 3.0
+        </a>
+        .
       </footer>
     </main>
   );

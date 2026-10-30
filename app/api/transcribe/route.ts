@@ -3,16 +3,79 @@
 // Rien n'est conservé : l'extrait est transmis à Gemini puis oublié.
 
 import { NextResponse } from "next/server";
+import { applyVocalized, blockTexts, pagesToText, parseStructure } from "@/lib/document";
 import {
   BusyError,
   RateLimitError,
+  readPdfStructure,
   toVersion,
   transcribeWithHarakat,
-  vocalizePdf,
+  vocalizeList,
   vocalizeText,
+  type Version,
 } from "@/lib/gemini";
+import { replaceQuranInBlocks, replaceQuranPassages } from "@/lib/quran";
 
 export const maxDuration = 300;
+
+// Les versets du Coran reconnus sont remplacés par le texte officiel (Tanzil).
+// En cas de problème, le texte de l'IA est rendu tel quel plutôt que de perdre la transcription.
+function withOfficialQuran(text: string): string {
+  try {
+    return replaceQuranPassages(text);
+  } catch (error) {
+    console.error(error);
+    return text;
+  }
+}
+
+// Une erreur de Google (limite, surcharge) est transmise telle quelle ; une réponse illisible
+// est redemandée une fois.
+async function twice<T>(task: () => Promise<T>): Promise<T> {
+  try {
+    return await task();
+  } catch (error) {
+    if (error instanceof RateLimitError || error instanceof BusyError) throw error;
+    console.error("Réponse illisible, nouvel essai :", error);
+    return task();
+  }
+}
+
+// PDF : 1. structure des pages (titres, paragraphes, vers, notes), 2. harakat bloc par bloc,
+// vérifiées (même nombre de blocs, même ordre, mêmes mots), 3. versets du Coran, bloc par bloc.
+// `unvocalized` : nombre de textes laissés sans harakat parce que l'IA avait changé des mots.
+async function readPdf(
+  pdf: ArrayBuffer,
+  version: Version,
+  first: number,
+  last: number,
+): Promise<{ text: string; unvocalized: number }> {
+  const pages = parseStructure(
+    await twice(() => readPdfStructure(pdf, version, first, last)),
+    first,
+  );
+  let result = { pages, failed: 0 };
+  const texts = blockTexts(pages);
+  if (texts.length > 0) {
+    let vocalized = applyVocalized(pages, await twice(() => vocalizeList(texts, version)));
+    if (!vocalized.ok) {
+      console.error("Vocalisation : nombre de blocs différent, nouvel essai");
+      vocalized = applyVocalized(pages, await vocalizeList(texts, version));
+    }
+    result = { pages: vocalized.pages, failed: vocalized.failed };
+    // Journal du serveur (sans le texte) : utile pour comprendre un résultat inattendu.
+    console.log(
+      `PDF pages ${first}-${last} : ${pages.map((page) => page.blocks.map((block) => block.type[0]).join("")).join(" | ")}, ${texts.length} textes, ${vocalized.failed} sans harakat, ${vocalized.flagged} mot(s) en rouge`,
+    );
+  }
+  let text = pagesToText(result.pages);
+  try {
+    text = replaceQuranInBlocks(text);
+  } catch (error) {
+    console.error(error);
+  }
+  return { text, unvocalized: result.failed };
+}
 
 export async function POST(request: Request) {
   try {
@@ -24,17 +87,18 @@ export async function POST(request: Request) {
     const params = new URL(request.url).searchParams;
     const version = toVersion(params.get("version"));
     const type = request.headers.get("content-type") ?? "";
+    if (type === "application/pdf") {
+      const first = Number(params.get("first")) || 1;
+      const last = Number(params.get("last")) || first;
+      const { text, unvocalized } = await readPdf(data, version, first, last);
+      return NextResponse.json({ text, unvocalized, lite: version === "legere" });
+    }
     const text = type.startsWith("text/plain")
       ? await vocalizeText(new TextDecoder().decode(data), version)
-      : type === "application/pdf"
-        ? await vocalizePdf(
-            data,
-            version,
-            Number(params.get("first")) || 1,
-            Number(params.get("last")) || 1,
-          )
-        : await transcribeWithHarakat(data, version);
-    return NextResponse.json({ text, lite: version === "legere" });
+      : await transcribeWithHarakat(data, version);
+    // ?quran=0 : pas de détection des versets ici (les sous-titres la font à la fin, sur le texte entier).
+    const finalText = params.get("quran") === "0" ? text : withOfficialQuran(text);
+    return NextResponse.json({ text: finalText, lite: version === "legere" });
   } catch (error) {
     if (error instanceof RateLimitError) {
       // Limite gratuite atteinte : le navigateur attend un peu puis réessaie.

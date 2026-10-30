@@ -20,23 +20,35 @@ export class BusyError extends Error {}
 
 type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 
-// `json` : demande à Google une réponse au format JSON (pour la relecture).
-async function callModel(model: string, parts: GeminiPart[], json = false): Promise<string> {
+// `json` : demande à Google une réponse au format JSON (pour la relecture) ; un objet impose en plus
+// la forme exacte de la réponse (schéma).
+// `system` : consignes générales (prompt système), plus strictes que le texte de la demande.
+async function callModel(
+  model: string,
+  parts: GeminiPart[],
+  json: boolean | object = false,
+  system?: string,
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY manquante dans les variables d'environnement");
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    // GEMINI_API_URL : seulement pour les tests (faux Gemini local). Par défaut, Google.
+    `${process.env.GEMINI_API_URL || "https://generativelanguage.googleapis.com"}/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
         contents: [{ role: "user", parts }],
         generationConfig: {
           temperature: 0,
+          // Réponses longues possibles (plusieurs pages denses) : jamais coupées en route.
+          maxOutputTokens: 32768,
           ...(json ? { responseMimeType: "application/json" } : {}),
+          ...(typeof json === "object" ? { responseSchema: json } : {}),
         },
       }),
     },
@@ -61,8 +73,13 @@ async function callModel(model: string, parts: GeminiPart[], json = false): Prom
 }
 
 // Interroge la version choisie par l'utilisateur.
-async function askGemini(parts: GeminiPart[], version: Version, json = false): Promise<string> {
-  return callModel(version === "legere" ? LITE_MODEL : MODEL, parts, json);
+async function askGemini(
+  parts: GeminiPart[],
+  version: Version,
+  json: boolean | object = false,
+  system?: string,
+): Promise<string> {
+  return callModel(version === "legere" ? LITE_MODEL : MODEL, parts, json, system);
 }
 
 const TRANSCRIPTION_RULES = `Transcribe this audio recording exactly as spoken.
@@ -86,33 +103,88 @@ export async function transcribeWithHarakat(audio: ArrayBuffer, version: Version
   );
 }
 
-// Lecture d'un PDF (texte ou scan) : texte de chaque page avec les harakat sur l'arabe.
+// Lecture d'un PDF (texte ou scan), étape 1 : structure de chaque page, sans ajouter de harakat.
 // `pdf` contient les pages `firstPage` à `lastPage` du document d'origine.
-export async function vocalizePdf(
+const STRUCTURE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    pages: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          page: { type: "INTEGER" },
+          blocks: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                type: { type: "STRING", enum: ["titre", "paragraphe", "vers", "note"] },
+                text: { type: "STRING" },
+              },
+              required: ["type", "text"],
+            },
+          },
+        },
+        required: ["page", "blocks"],
+      },
+    },
+  },
+  required: ["pages"],
+};
+
+export async function readPdfStructure(
   pdf: ArrayBuffer,
   version: Version,
   firstPage: number,
   lastPage: number,
-): Promise<string> {
-  const rules = `This PDF contains pages ${firstPage} to ${lastPage} of a document.
-Copy the text of every page, in reading order.
+): Promise<unknown> {
+  const count = lastPage - firstPage + 1;
+  const rules = `This PDF contains ${count} page(s) of an Arabic book (it may be a scan). Read every page and return its structure as JSON.
 Rules:
-- Before the text of each page, write a line containing only: — Page N — (N = ${firstPage} for the first page of this PDF, then ${firstPage + 1}, and so on).
-- Keep the words exactly as written. Never translate, never summarize, never skip a passage.
-- Add full harakat (tashkil) to every Arabic word, according to the grammar of the sentence. Keep a harakah already written in the PDF unless it is clearly wrong.
-- Do not add anything to French or English words.
-- Start a new line at the end of each sentence or line of verse.
-- If you are not sure about the spelling or the harakat of an Arabic word, wrap that single word in ⟦ and ⟧. Do this only for genuinely uncertain words.
-- Ignore page headers, footers and page numbers printed on the page.
-- Output only the text: no title, no comment, no explanation.
-- Never add a verse number, a hadith reference or a scholar's name that is not written in the PDF.`;
-  return askGemini(
+- One item in "pages" per page of this PDF, in order; "page" is 1 for the first page of this PDF, then 2, and so on.
+- NEVER SKIP ANY TEXT: every printed line of the page (except page numbers and decorations) must appear in exactly one block, in reading order (from the top of the page to the bottom).
+- Block types:
+  - "titre": a heading, chapter or section title. Field "text". If the heading is the basmala written in calligraphy, write it in plain letters: بسم الله الرحمن الرحيم.
+  - "paragraphe": prose, for example the commentary that explains the poem. A whole paragraph of the original is ONE block, even if it has several sentences: join the line breaks inside the paragraph with spaces. Start a new block only where the original starts a new paragraph (a new indented line, often starting with « أي » or with a word of the poem between brackets). Field "text".
+  - "vers": ONE printed line of the poem. A line of poetry is printed (often in bold) as two halves side by side on the SAME line, separated by a wide blank space. In "text", copy that printed line exactly as you read it (right half first, then left half) and write " *** " at the place of the wide blank space, for example: "أقسام لازم لديهم أربعة *** وتلك كلمي وحرفي معه". One block per printed line of poetry: two printed lines of poetry are always two separate blocks. Write each line of poetry only once. A line of poetry is never a "titre", even if it is bold.
+  - "note": a footnote at the bottom of the page, below a short line. Field "text".
+- Copy the text exactly as printed: same words, same spelling, same order. Keep the harakat that are printed, but do not add any. Never correct, translate, summarize or skip anything.
+- Words stretched with a long line for justification (for example الأشـــــاء) are written normally, without the stretching line (الأشياء).
+- Ignore page numbers, running headers and footers, decorative lines and ornaments.
+- If a word is unreadable or you are not sure of it, wrap that single word in ⟦ and ⟧.
+- Never add a verse number, a hadith reference or a scholar's name that is not printed.`;
+  const answer = await askGemini(
     [
       { inline_data: { mime_type: "application/pdf", data: Buffer.from(pdf).toString("base64") } },
       { text: rules },
     ],
     version,
+    STRUCTURE_SCHEMA,
   );
+  return JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+}
+
+// Lecture d'un PDF, étape 2 : harakat ajoutées texte par texte. La réponse doit avoir exactement
+// le même nombre de textes, dans le même ordre (vérifié ensuite par lib/document.ts).
+export async function vocalizeList(texts: string[], version: Version): Promise<unknown> {
+  const rules = `Add full harakat (tashkil) to each text of this JSON array, taken from an Arabic book (prose, headings and lines of poetry).
+Answer with a JSON array of strings with EXACTLY ${texts.length} items, in the same order: item number i of the answer is item number i of the input with harakat.
+Rules:
+- Never merge, split, add or remove items.
+- Keep every word exactly as written, in the same order. Never translate, summarize or correct the wording.
+- Keep the harakat already written and add the missing ones, according to the grammar of the sentence (and the metre for poetry).
+- Keep the ⟦ ⟧ marks. If you are not sure about the harakat of a word, wrap that single word in ⟦ and ⟧.
+- Do not add anything to French or English words.
+- Never add a verse number, a hadith reference or a scholar's name.
+
+Texts:
+${JSON.stringify(texts)}`;
+  const answer = await askGemini([{ text: rules }], version, {
+    type: "ARRAY",
+    items: { type: "STRING" },
+  });
+  return JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
 }
 
 // Texte collé par l'utilisateur : on ajoute les harakat sans rien changer d'autre.
@@ -205,4 +277,54 @@ export async function checkText(text: string, version: Version): Promise<Issue[]
       ].slice(0, 4),
       reason: item.reason,
     }));
+}
+
+const SUGGEST_RULES = `A word in this transcription of a religious lesson may be wrong (misheard, misspelled or with wrong harakat).
+Propose what the speaker most probably said, using the sentence around it.
+Answer with a JSON object:
+{"suggestions": an array of 1 to 4 possible words with full harakat (Arabic) or correct spelling (French, English), the most likely first; include the word itself with corrected harakat if it is probably right,
+ "reason": a very short explanation in French}
+Never add a verse number, a hadith reference or a scholar's name.
+`;
+
+// Propose des corrections pour un mot choisi par l'utilisateur, d'après la phrase autour.
+export async function suggestWord(word: string, context: string, version: Version): Promise<Issue> {
+  const prompt = `${SUGGEST_RULES}\nSentence: ${context}\nWord: ${word}`;
+  const answer = await askGemini([{ text: prompt }], version, true);
+  const parsed: unknown = JSON.parse(answer.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+  const data = (parsed ?? {}) as { suggestions?: unknown; reason?: unknown };
+  const suggestions = Array.isArray(data.suggestions)
+    ? data.suggestions
+        .filter((choice): choice is string => typeof choice === "string" && choice.trim() !== "")
+        .map((choice) => choice.trim())
+    : [];
+  return {
+    word,
+    suggestions: [...new Set(suggestions)].slice(0, 4),
+    reason: typeof data.reason === "string" ? data.reason : "",
+  };
+}
+
+// Mise en forme de sous-titres nettoyés. Le code vérifie ensuite que les mots n'ont pas changé
+// (lib/subtitles.ts) : si l'IA a reformulé, sa réponse est refusée.
+const FORMAT_RULES = `You format the transcript of a lecture or a course (subtitles), in Arabic, French or English, possibly mixed.
+The words belong to the speaker. Your job is only to make the text readable, never to change what was said.
+
+You may ONLY do these four things:
+1. Delete hesitation sounds and filler noises: euh, heu, hum, hmm, bah, ben (only when it is a filler), uh, um, ممم, إيه, آه, امم.
+   Delete involuntary immediate repetitions of the same word or words: "le le" becomes "le", "في في" becomes "في".
+2. Add punctuation and capital letters at the start of sentences. Use Arabic punctuation (، ؛ ؟) in Arabic sentences.
+3. Split the text into logical paragraphs, separated by one empty line.
+4. Only when the topic clearly changes, insert a short heading on its own line starting with "## ", in the language of the following paragraph, made of words taken from that paragraph. Headings must be rare.
+
+ABSOLUTE RULES (never break them):
+- Keep every other word exactly as written, in the same order, in the same language and the same spelling.
+- Never rephrase, summarize, shorten, translate, complete, explain or correct the content, the grammar, the spelling or the vocabulary, even if the speaker makes a mistake or a sentence is unfinished.
+- Never delete a word that carries meaning, even if it looks like a verbal tic: يعني، طيب، إذن، bon, alors, donc, voilà, en fait, quand ils font partie de la phrase. When in doubt, keep the word.
+- The text may start or end in the middle of a sentence: leave it as it is.
+- Do not add or remove harakat. Do not add verse numbers, hadith references, scholar names, notes or comments.
+- Output only the formatted text.`;
+
+export async function formatSubtitles(text: string, version: Version): Promise<string> {
+  return askGemini([{ text: `Transcript to format:\n${text}` }], version, false, FORMAT_RULES);
 }
