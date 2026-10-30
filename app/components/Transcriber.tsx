@@ -81,8 +81,16 @@ type SubReport = {
   harakatFailed: number; // morceaux restés sans harakat
 };
 
-// Lit un fichier texte : UTF-8, ou à défaut l'ancien encodage arabe de Windows.
+// Lit un fichier de sous-titres : Word (.docx), ou texte en UTF-8 (à défaut, l'ancien encodage
+// arabe de Windows). L'ancien format Word (.doc) n'est pas lu : la page demande un .docx.
 async function readTextFile(file: File): Promise<string> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".doc")) throw new Error("doc");
+  if (name.endsWith(".docx")) {
+    // La lecture Word n'est chargée qu'à ce moment-là, pour garder la page légère.
+    const { readDocx } = await import("@/lib/docx");
+    return readDocx(file);
+  }
   const buffer = await file.arrayBuffer();
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
@@ -603,7 +611,9 @@ export default function Transcriber({ ready }: { ready: boolean }) {
         step: "error",
         canResume: false,
         message:
-          "Aucun texte n'a été trouvé. Vérifiez qu'il s'agit bien d'un fichier de sous-titres (.srt, .vtt) ou d'un texte (.txt).",
+          error instanceof Error && error.message === "doc"
+            ? "Ce fichier est dans l'ancien format Word (.doc). Ouvrez-le dans Word, puis « Enregistrer sous » au format .docx, et déposez le nouveau fichier."
+            : "Aucun texte n'a été trouvé. Vérifiez qu'il s'agit bien d'un fichier de sous-titres (.srt, .vtt), d'un texte (.txt) ou d'un document Word (.docx).",
       });
       return;
     }
@@ -1263,12 +1273,12 @@ export default function Transcriber({ ready }: { ready: boolean }) {
                 {subFile ? subFile.name : "Choisir un fichier de sous-titres"}
               </span>
               <span className="mt-1 block text-sm text-stone-500">
-                .srt, .vtt ou .txt : sous-titres d&apos;un cours, d&apos;une conférence, transcription
-                YouTube copiée
+                .srt, .vtt, .txt ou Word (.docx) : sous-titres d&apos;un cours, d&apos;une conférence,
+                transcription YouTube copiée
               </span>
               <input
                 type="file"
-                accept=".srt,.vtt,.txt,text/plain,text/vtt"
+                accept=".srt,.vtt,.txt,.docx,.doc,text/plain,text/vtt,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="sr-only"
                 disabled={busy}
                 onChange={(event) => {

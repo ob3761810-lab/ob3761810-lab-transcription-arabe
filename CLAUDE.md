@@ -29,8 +29,8 @@ Je veux une application simple, clé en main et gratuite. Pas de réglages compl
    remplacement (fausse détection) ou de le rétablir. Le PDF et le Word contiennent le texte officiel
    et la référence. Les versets officiels ne sont jamais relus ni marqués en rouge par l'IA.
    Hadiths : pas de remplacement pour l'instant.
-9. Onglet « Sous-titres » : j'importe des sous-titres (.srt, .vtt, .txt, transcription YouTube copiée
-   avec horaires) ou je les colle, et j'obtiens un texte propre (arabe, français ou mélangé) :
+9. Onglet « Sous-titres » : j'importe des sous-titres (.srt, .vtt, .txt, Word .docx, transcription YouTube
+   copiée avec horaires) ou je les colle (pas de PDF, choix volontaire ; ancien .doc refusé avec un message), et j'obtiens un texte propre (arabe, français ou mélangé) :
    - sans IA : horaires, numéros, balises, en-têtes et doublons supprimés, lignes recollées ;
    - option « Mise en forme par l'IA » : hésitations retirées, ponctuation, paragraphes, intertitres rares.
      RÈGLE ABSOLUE : l'IA ne reformule, ne résume, ne traduit, ne complète et ne corrige jamais.
@@ -84,7 +84,8 @@ Interdit : télécharger la vidéo ou l'audio d'une plateforme (YouTube, Faceboo
 - Sous-titres : nettoyage sans IA dans `lib/subtitles.ts` (lecture, doublons, paragraphes, morceaux
   d'environ 1 500 mots coupés à une fin de phrase ou au plus long silence, contrôle des mots) ;
   mise en forme par l'IA dans `formatSubtitles` (`lib/gemini.ts`, prompt système strict), via `/api/format` ;
-  versets via `/api/quran`. Tests : `tests/subtitles.test.mjs`.
+  versets via `/api/quran`. Tests : `tests/subtitles.test.mjs`. Word (.docx) lu dans le navigateur sans IA
+  (`lib/docx.ts`, bibliothèque `jszip`, déjà utilisée par `docx`) : texte exact, tabulations gardées.
 - Nom du site : « Harakat Nass » (حَرَكَاتُ النَّصِّ). Style classique islamique : vert profond, doré,
   fond crème, motif géométrique dans l'en-tête, police arabe Amiri. Couleurs dans `app/globals.css`.
 - Pas de service payant sans mon accord.

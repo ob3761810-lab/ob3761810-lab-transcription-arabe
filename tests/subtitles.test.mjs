@@ -218,3 +218,35 @@ test("contrôle du nombre de mots avant/après, sans IA : aucune perte", () => {
     assert.equal(check.before, check.after);
   }
 });
+
+// --- Sous-titres en Word (.docx) ---
+
+import { readFileSync } from "node:fs";
+import { readDocx } from "../lib/docx.ts";
+
+const docx = (name) => new File([readFileSync(new URL(`./fixtures/${name}`, import.meta.url))], name);
+
+test("Word (.docx) : fichier SRT collé dans Word, lu au mot près puis nettoyé", async () => {
+  const raw = await readDocx(docx("sous-titres-srt.docx"));
+  assert.ok(raw.includes("00:00:01,000 --> 00:00:04,000"));
+  const { words } = clean(raw);
+  assert.equal(
+    textOf(words),
+    "بسم الله والحمد لله أما بعد فإن موضوع درسنا اليوم هو منهج السلف في طلب العلم.",
+  );
+  assert.equal(words[0].time, 1);
+});
+
+test("Word (.docx) : transcription YouTube avec tabulations, retour à la ligne et caractères spéciaux", async () => {
+  const raw = await readDocx(docx("transcription-youtube.docx"));
+  const { words } = clean(raw);
+  assert.equal(
+    textOf(words),
+    "السلام عليكم ورحمة الله aujourd'hui nous expliquons le hadith & ses إنما الأعمال بالنيات",
+  );
+  assert.equal(words.find((word) => word.text === "إنما").time, 9);
+});
+
+test("Word ancien format (.doc) ou fichier qui n'est pas un Word : refusé proprement", async () => {
+  await assert.rejects(readDocx(new File(["pas un document word"], "cours.docx")));
+});
