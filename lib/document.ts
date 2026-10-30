@@ -155,14 +155,18 @@ export function blockTexts(pages: DocPage[]): string[] {
   );
 }
 
-// Forme d'un mot pour comparer : sans harakat, sans ponctuation, sans marques ⟦ ⟧,
-// avec les formes de l'alif, de la ta marbuta et du ya unifiées.
+// Forme d'un mot pour comparer : sans harakat, sans ponctuation, sans marques ⟦ ⟧, avec les formes
+// de l'alif, de la ta marbuta, du ya et de la hamza unifiées (les sous-titres automatiques écrivent
+// « اشهد ان », « مساله » : ce n'est pas un autre mot que « أَشْهَدُ أَنْ », « مَسْأَلَة »).
 function key(word: string): string {
   return word
     .replace(/[ؐ-ًؚ-ٰٟۖ-ۭـ]/g, "")
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ى/g, "ي")
     .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ء/g, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, "");
 }

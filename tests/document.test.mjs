@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import {
   applyVocalized,
   blockTexts,
+  checkVocalized,
   countBlocks,
   pagesToText,
   parseStructure,
@@ -205,6 +206,22 @@ test("vers répété par l'IA sous une autre forme (ancien format) : la copie es
     1,
   );
   assert.equal(countBlocks(pagesToText(pages)).vers, 2);
+});
+
+test("sous-titres automatiques sans hamza (« اشهد ان لا اله الا الله ») : harakat acceptées", () => {
+  // Phrases réelles d'une transcription YouTube automatique (cours « دليل الطالب »).
+  const cases = [
+    ["واشهد ان لا اله الا الله وحده لا شريك له", "وَأَشْهَدُ أَنْ لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ"],
+    ["وهذا لا يكاد يوجد الا في القليل من المختصرات كل مساله", "وَهَذَا لَا يَكَادُ يُوجَدُ إِلَّا فِي الْقَلِيلِ مِنَ الْمُخْتَصَرَاتِ كُلُّ مَسْأَلَةٍ"],
+    ["وهو اخر القضاه في مصر", "وَهُوَ آخِرُ الْقُضَاةِ فِي مِصْرَ"],
+    ["والله اسال ان ينفع به", "وَاللَّهَ أَسْأَلُ أَنْ يَنْفَعَ بِهِ"],
+  ];
+  for (const [before, after] of cases) {
+    const checked = checkVocalized(before, after);
+    assert.ok(checked, before);
+    assert.equal(checked.flagged, 0, before);
+    assert.equal(checked.text, after);
+  }
 });
 
 test("traduction : vers écrits « sadr — ʿajuz », sans préfixes de mise en page", () => {
